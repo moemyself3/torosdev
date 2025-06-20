@@ -3,9 +3,9 @@ from config import Configuration
 from libraries.utils import Utils
 from astropy.io import fits
 from astropy.stats import sigma_clipped_stats
-from photutils import CircularAperture
-from photutils import CircularAnnulus
-from photutils import aperture_photometry
+from photutils.aperture import CircularAperture
+from photutils.aperture import CircularAnnulus
+from photutils.aperture import aperture_photometry
 from photutils.centroids import centroid_sources
 import numpy as np
 import pandas as pd

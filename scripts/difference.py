@@ -5,11 +5,11 @@ from config import Configuration
 import os
 import numpy as np
 from astropy.io import fits
-from photutils import CircularAperture
-from photutils import CircularAnnulus
+from photutils.aperture import CircularAperture
+from photutils.aperture import CircularAnnulus
 from photutils.aperture import aperture_photometry
 from astropy.stats import sigma_clipped_stats
-from FITS_tools.hcongrid import hcongrid
+
 
 class BigDiff:
 
@@ -155,7 +155,7 @@ class BigDiff:
         # compile the oisdifference.c code
         os.system('cp oisdifference.c ' + Configuration.CODE_DIFFERENCE_DIRECTORY)
         os.chdir(Configuration.CODE_DIFFERENCE_DIRECTORY)
-        os.system('gcc oisdifference.c -lcfitsio -lm')
+        os.system('gcc oisdifference.c -L/Users/yuw816/Development/cfitsio-4.6.2/lib -I/Users/yuw816/Development/cfitsio-4.6.2/include -lcfitsio -lm')
         os.chdir(Configuration.WORKING_DIRECTORY)
 
         # prepare the master frame

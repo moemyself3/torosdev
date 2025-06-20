@@ -4,14 +4,14 @@
 class Configuration:
 
     # Computer for reduction
-    MACHINE = 'tess'
+    MACHINE = 'mac_studio'
     RAW_FILE_EXTENSION = '.fits'
     FILE_EXTENSION = '.fits'
 
     # update for different data products
-    FIELD = 'FIELD_36.007' # 'FIELD_28.01c'  # 'FIELD_2f.0d2'  # # FIELD_30.000
-    RA = 10.18868 # 46.636  # 307.317 # # 0.723
-    DEC = -21.69714 # -39.405  # -30.551 #  # -29.286
+    FIELD = 'FIELD_0e.001' # 'FIELD_28.01c'  # 'FIELD_2f.0d2'  # # FIELD_30.000
+    RA = 6.0223292 # 46.636  # 307.317 # # 0.723
+    DEC = -72.0814444 # -39.405  # -30.551 #  # -29.286
     DATE = '2024-10-11'
     PHOTOMETRY = 'PSF'
     APERTURE_SHAPE = 'circ'
@@ -23,14 +23,12 @@ class Configuration:
     TRANSIENT_DEC = -21.9258309  # -38.93038375  # -30.269894 #
 
     # steps to skip
-    CLEAN_SKIP = 'Y'
-    WRITE_SKY = 'N'
-    CALIBRATE_SKIP = 'Y'
-    MASTER_SKIP = 'N'
-    DIFFERENCE_SKIP = 'N'
-    PHOTOMETRY_SKIP = 'N'
-    LIGHTCURVE_SKIP = 'N'
-    COLOR_SKIP = 'Y'
+    CLEAN_SKIP = 'N'
+    WRITE_SKY = 'Y'
+    MASTER_SKIP = 'Y'
+    DIFFERENCE_SKIP = 'Y'
+    PHOTOMETRY_SKIP = 'Y'
+    LIGHTCURVE_SKIP = 'Y'
 
     # telescope information
     PIXEL_SIZE = 0.4959  #  0.47  # arcsec per pixel
@@ -60,7 +58,7 @@ class Configuration:
     RMS_UP_LIMIT = 0.02  # the upper limit on precision to use for the kernel stars
 
     # update sky subtraction specific information
-    PIX = 220
+    PIX = 55
 
     # a photometry configuration
     FWHM = 15.  # fwhm of the image
@@ -74,7 +72,7 @@ class Configuration:
     ANNULI_OUTER = APER_SIZE + 4
 
     # output paths for logging, temporary files, figures etc
-    WORKING_DIRECTORY = "/home/oelkerrj/Development/toros/"
+    WORKING_DIRECTORY = "/Users/yuw816/Development/toros/"
     ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts/'
     ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis/'
     LOG_DIRECTORY = WORKING_DIRECTORY + 'logs/'
@@ -82,14 +80,14 @@ class Configuration:
     CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference/'
 
     # input paths for data etc
-    DATA_DIRECTORY = "/media/oelkerrj/DATA/toros/commissioning/"
-    DARKS_DIRECTORY = DATA_DIRECTORY + "darks/"
-    BIAS_DIRECTORY = DATA_DIRECTORY + "bias/"
-    FLATS_DIRECTORY = DATA_DIRECTORY + "flats/"
-    RAW_DIRECTORY = DATA_DIRECTORY + "raw/"
+    DATA_DIRECTORY = "/Users/yuw816/Data/toros/commissioning/"
+    RAW_DIRECTORY = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/TOROS/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
     MASTER_DIRECTORY = DATA_DIRECTORY + "master/"
     CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration/"
+    BIAS_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_bias/"
+    FLAT_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_flat/"
+    DARK_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_dark/"
     CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids/"
     LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc/"
     DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
@@ -98,7 +96,7 @@ class Configuration:
     # directory_list
     DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY,
                    QUERIES_DIRECTORY, CLEAN_DIRECTORY, MASTER_DIRECTORY, LIGHTCURVE_DIRECTORY,
-                   CENTROID_DIRECTORY, RAW_DIRECTORY, FLATS_DIRECTORY, BIAS_DIRECTORY, DARKS_DIRECTORY,
+                   CENTROID_DIRECTORY, RAW_DIRECTORY, BIAS_DIRECTORY, DARK_DIRECTORY, FLAT_DIRECTORY,
                    DIFFERENCED_DIRECTORY, CLEAN_DATE_DIRECTORY, CODE_DIFFERENCE_DIRECTORY]
 
     # BROKER CONFIGURATION SPECIFICS

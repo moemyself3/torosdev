@@ -3,13 +3,13 @@ from libraries.utils import Utils
 import numpy as np
 import os
 from astropy.io import fits
-from photutils import CircularAperture
-from photutils import CircularAnnulus
+from photutils.aperture import CircularAperture
+from photutils.aperture import CircularAnnulus
 from photutils.aperture import aperture_photometry
 from photutils.centroids import centroid_sources
 import pandas as pd
 import warnings
-from FITS_tools.hcongrid import hcongrid
+# from FITS_tools.hcongrid import hcongrid
 from astroquery.mast import Catalogs
 from astropy.wcs import WCS
 warnings.filterwarnings("ignore", category=RuntimeWarning)
