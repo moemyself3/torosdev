@@ -68,8 +68,8 @@ class Clean:
 
                 # clean the image
                 clean_img, header, bd_flag = Clean.clean_img(file, image_clip,
-                                                             bias_subtract, dark_subtract, flat_divide,
-                                                             sky_subtract, plate_solve)
+                                                             bias_subtract, dark_subtract,
+                                                             flat_divide, sky_subtract, plate_solve)
 
                 # write out the file
                 if bd_flag == 0:
@@ -87,8 +87,9 @@ class Clean:
         Utils.log("Imaging cleaning complete in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
 
     @staticmethod
-    def clean_img(file, image_clip='Y', bias_subtract='N',
-                  dark_subtract="N", flat_divide='N', sky_subtract="N", plate_solve="N"):
+    def clean_img(file, image_clip='Y', bias_subtract='N', dark_subtract="N",
+                  flat_divide='N', sky_subtract="N", plate_solve="N"):
+
         """ This function is the primary script to clean the image, various other functions found in this class
         can be found in the various libraries imported.
 
@@ -99,6 +100,7 @@ class Clean:
         :parameter flat_divide - Y/N if you want to flatten the image (default = N)
         :parameter dark_subtract -Y/N if you want to subtract the dark frame (default = N)
         :parameter plate_solve -Y/N if you want to plate solve the image (default = N)
+
         """
 
         Utils.log("Now cleaning " + file + ".", "info")
@@ -106,25 +108,15 @@ class Clean:
         # read in the image
         img, header = fits.getdata(file, header=True)
 
-        # bias subtract if necessary
-        if bias_subtract == 'Y':
+        # remove bias and dark as necessary
+        if (bias_subtract == 'Y') & (dark_subtract == 'Y'):
             st = time.time()
-            bias = Preprocessing.mk_bias(bias_overwrite='N', combine_type='mean')
-            img, header = Preprocessing.bias_subtract(img, header)
+            bias, dark = Preprocessing.mk_combined_bias_and_dark(image_overwrite='N')
+            img, header = Preprocessing.subtract_scaled_bias_dark(img, header)
             fn = time.time()
-            Utils.log("Image bias corrected in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
+            Utils.log("Image bias and dark corrected in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
         else:
-            Utils.log("Skipping bias correction....", "info")
-
-        # dark subtract if necessary
-        if dark_subtract == 'Y':
-            st = time.time()
-            dark = Preprocessing.mk_dark(300, overwrite_dark='N', combine_type='mean')
-            img, header = Preprocessing.dark_subtract(img, header)
-            fn = time.time()
-            Utils.log("Image dark corrected in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
-        else:
-            Utils.log("Skipping dark correction....", "info")
+            Utils.log("Skipping bias and darks subtraction...", "info")
 
         # flat divide if necessary
         if flat_divide == 'Y':
@@ -147,9 +139,6 @@ class Clean:
         # sky subtract if necessary
         if sky_subtract == 'Y':
             st = time.time()
-            # the background sample size is set to pix x pix pixels, and bxs x bxs sub images
-            # this should not be hard coded...update for later
-
             Utils.log("A background box of " + str(Configuration.PIX) + " x " + str(Configuration.PIX) +
                       " will be used for background subtraction.", "info")
 

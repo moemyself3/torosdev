@@ -24,7 +24,7 @@ class Configuration:
 
     # steps to skip
     CLEAN_SKIP = 'N'
-    WRITE_SKY = 'Y'
+    WRITE_SKY = 'N'
     MASTER_SKIP = 'Y'
     DIFFERENCE_SKIP = 'Y'
     PHOTOMETRY_SKIP = 'Y'
@@ -58,7 +58,7 @@ class Configuration:
     RMS_UP_LIMIT = 0.02  # the upper limit on precision to use for the kernel stars
 
     # update sky subtraction specific information
-    PIX = 55
+    PIX = 220
 
     # a photometry configuration
     FWHM = 15.  # fwhm of the image

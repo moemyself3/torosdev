@@ -3,254 +3,205 @@ from config import Configuration
 from libraries.utils import Utils
 import numpy as np
 import os
-import astropy
-import astropy.stats
-from astropy.nddata.utils import Cutout2D
 from astropy.time import Time
 from astropy.io import fits
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 import twirl
 from photutils.detection import DAOStarFinder
-from astropy.wcs import WCS
+from scipy.signal import medfilt
 from astropy.stats import SigmaClip
 from photutils.background import Background2D, MedianBackground
-from scipy.interpolate import griddata
+from astropy.stats import sigma_clipped_stats
 import astroalign as aa
 import matplotlib
 matplotlib.use('TkAgg')
-
+import matplotlib.pyplot as plt
 
 class Preprocessing:
 
     @staticmethod
-    def mk_bias(bias_overwrite, combine_type='mean'):
-        """ This function will make the master bias frame using the provided image list and desired method.
-        :parameter bias_overwrite - Y/N if you want to force an overwrite for the bias frame
-        :parameter combine_type - Right now the combination type is mean, but it can be updated for whatever you
-                                method is desired.
+    def mk_combined_bias_and_dark(image_overwrite):
+        """ This function will make a master bias frame (sans a mean pixel value) and a master dark frame. The master
+        dark frame uses the bias frames from the same night to generate. The master bias frame has its median pixel
+        value removed so it can be scaled to the value of the overscan region later. This is because the TOROS bias
+        level seems to be changing with time.
 
-        :return - The bias frame is returned and written to the calibration directory
+        :parameter image_overwrite - Y/N if you want to force an overwrite for each master frame
+
+        :return - The master bias and the master dark are returned
         """
 
-        # set the master bias file name
-        file_name = 'bias' + Configuration.FILE_EXTENSION
+        # set the names of the master frames
+        bias_name = 'bias' + Configuration.FILE_EXTENSION
+        dark_name = 'dark' + Configuration.FILE_EXTENSION
 
         # check to see if the master bias frame exists, and if it does save some time by skipping
-        if (os.path.isfile(Configuration.CALIBRATION_DIRECTORY + file_name) == 0) | (bias_overwrite == 'Y'):
+        if ((os.path.isfile(Configuration.CALIBRATION_DIRECTORY + dark_name) == 0) |
+                (os.path.isfile(Configuration.CALIBRATION_DIRECTORY + bias_name) == 0) |
+                (image_overwrite == 'Y')):
 
-            if combine_type == 'mean':
-                # check if the temporary files exist
-                chk_bias_list = Utils.get_file_list(Configuration.BIAS_DIRECTORY, Configuration.FILE_EXTENSION)
+            # get the image lists
+            biases = pd.read_csv(Configuration.CALIBRATION_DIRECTORY + 'bias_list.csv', sep=',')
+            darks = pd.read_csv(Configuration.CALIBRATION_DIRECTORY + 'dark_list.csv', sep=',')
+            total_bias = 0
+            total_dark = 0
+            # group based on the date to get the unique dates
+            bias_dates = biases.groupby('Date').agg({'count'}).reset_index()['Date'].to_list()
+            ndates = len(bias_dates)
 
-                # get the image list
-                images = pd.read_csv(Configuration.CALIBRATION_DIRECTORY + 'bias_list.csv', sep=',')
-                image_list = images.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.File, axis=1).to_list()
+            # make holders for the total number of nights
+            bias_bulk = np.ndarray(shape=(ndates, Configuration.AXS_Y_RW, Configuration.AXS_X_RW))
+            dark_bulk = np.ndarray(shape=(ndates, Configuration.AXS_Y_RW, Configuration.AXS_X_RW))
 
-                # determine the number of loops we need to move through for each image
-                nfiles = len(image_list)
+            zdx = 0
+            for dte in bias_dates:
+                # determine how many bias and dark frames exist on this date
+                bias_frames = biases[biases.Date == dte]
+                bias_list = bias_frames.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.File, axis=1).to_list()
+                nbias = len(bias_frames)
 
-                if len(chk_bias_list) == 0:
+                dark_frames = darks[darks.Date == dte]
+                ndarks = len(dark_frames)
 
-                    # update the log
-                    Utils.log("Generating a master bias frame from multiple files using a mean combination. There are "
-                              + str(nfiles) + " images to combine.", "info")
+                # if dark frames exist, then move forward
+                if ndarks > 0:
+                    Utils.log("Working to make mini bias and dark files for " + dte + '.', "info")
+                    dark_list = dark_frames.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.Files,
+                                                  axis=1).to_list()
 
-                    # set the temporary number file count
-                    tmp_num = 0
+                    # generate the frame holder
+                    bias_hld = np.ndarray(shape=(nbias, Configuration.AXS_Y_RW, Configuration.AXS_X_RW))
+                    dark_hld = np.ndarray(shape=(ndarks, Configuration.AXS_Y_RW, Configuration.AXS_X_RW))
 
-                    # pull the header information from the first file of the set
-                    bias_header = fits.getheader(image_list[0])
+                    idx = 0
+                    for ii in range(0, nbias):
+                        # read in the bias file
+                        bias_tmp, bias_head = fits.getdata(bias_list[ii], header=True)
+                        bias_hld[idx] = bias_tmp
 
-                    for kk in range(0, nfiles):
-                        # read in the bias frame
-                        bias_tmp = fits.getdata(image_list[kk]).astype('float')
+                        idx = idx + 1
+                        total_bias = total_bias + 1
+                        del bias_tmp
+                    bias_tmp_mdn = np.median(bias_hld, axis=0)
+                    Utils.log("Bias done.", "info")
 
-                        # initialize if it is the first file, otherwise....
-                        try:
-                            bias_image = bias_image + bias_tmp
-                        except:
-                            bias_image = bias_tmp
+                    jdx = 0
+                    for jj in range(0, ndarks):
+                        # read in the dark file
+                        dark_tmp, dark_head = fits.getdata(dark_list[jj], header=True)
 
-                        # update the log to keep an eye on progress
-                        if (kk % 20) == 0:
-                            Utils.log(str(kk + 1) + " files read in. " +
-                                      str(nfiles - kk - 1) + " files remain.", "info")
+                        # remove the bias frame from the temporary dark
+                        dark_hld[jdx] = dark_tmp - bias_tmp_mdn
+                        jdx = jdx + 1
+                        total_dark = total_dark + 1
+                        del dark_tmp
+                    dark_tmp_mdn = np.median(dark_hld, axis=0)
+                    # write the image out to the temporary directory
+                    if zdx < 10:
+                        fits.writeto(Configuration.DARK_DIRECTORY + '0' + str(zdx) + "_scale_tmp_dark.fits",
+                                     dark_tmp_mdn, overwrite=True)
+                    else:
+                        fits.writeto(Configuration.DARK_DIRECTORY + str(zdx) + "_scale_tmp_dark.fits",
+                                     dark_tmp_mdn, overwrite=True)
+                    Utils.log("Dark done.", "info")
 
-                        # write out the temporary files to save memory when possible
-                        if ((kk % 100 == 0) & (kk > 0)) | (kk == nfiles - 1):
-                            # update the log
-                            Utils.log("Writing temporary file " + str(tmp_num) + ". " +
-                                      str(nfiles - kk - 1) + " files remain.", "info")
+                    # what are the sizes of the over scan?
+                    ovs_x_size = 180
+                    ovs_y_size = 20  # it is 20 above and 20 below
 
-                            # write out the temporary file
-                            fits.writeto(Configuration.BIAS_DIRECTORY + str(tmp_num) + "_tmp_bias.fits",
-                                         bias_image, bias_header, overwrite=True)
-                            tmp_num = tmp_num + 1
-                            del bias_image # save memory
-                        del bias_tmp # save memory
-                else:
-                    Utils.log("Temporary bias files found. Skipping generating files. "
-                              "Delete them if you need to!", "info")
-                # get the temporary file list
-                tmp_bias_list = Utils.get_file_list(Configuration.BIAS_DIRECTORY, Configuration.FILE_EXTENSION)
+                    # what are the sizes of each chip (not including the over scan)?
+                    chip_x_size = 1320
+                    chip_y_size = 5280
 
-                # combine all of the temporary files
-                for kk in range(0, len(tmp_bias_list)):
-                    # read in the bias frame
-                    bias_tmp = fits.getdata(Configuration.BIAS_DIRECTORY + tmp_bias_list[kk]).astype('float')
+                    # what is the full size of the chip (including over scan)
+                    full_chip_x = chip_x_size + ovs_x_size
+                    full_chip_y = chip_y_size + ovs_y_size
 
-                    # initialize if it is the first file, otherwise....
-                    try:
-                        bias_image_fin = bias_image_fin + bias_tmp
-                    except:
-                        bias_image_fin = bias_tmp
-                del bias_tmp
+                    # move through x and y to mask the "image" parts of hte image
+                    for x in range(0, Configuration.AXS_X_RW, full_chip_x):
+                        for y in range(0, Configuration.AXS_Y_RW, full_chip_y):
 
-                # generate the mean bias file
-                bias_image_mean = bias_image_fin / nfiles
-                del bias_image_fin
+                            # put the clipped image into the holder image
+                            bias_tmp_mdn[y:y + full_chip_y, x:x + full_chip_x] = (
+                                    bias_tmp_mdn[y:y + full_chip_y, x:x + full_chip_x] -
+                                    np.median(bias_tmp_mdn[y:y + full_chip_y, x:x + full_chip_x]))
 
-                # update the header with relevant information
-                bias_header['BIAS_COMB'] = 'mean'
-                bias_header['NUM_BIAS'] = nfiles
+                    if zdx < 10:
+                        fits.writeto(Configuration.BIAS_DIRECTORY + '0' + str(zdx) + "_scale_tmp_bias.fits",
+                                     bias_tmp_mdn, overwrite=True)
+                    else:
+                        fits.writeto(Configuration.BIAS_DIRECTORY + str(zdx) + "_scale_tmp_bias.fits",
+                                     bias_tmp_mdn, overwrite=True)
 
-                # write the image out to the master directory
-                fits.writeto(Configuration.CALIBRATION_DIRECTORY + file_name,
-                             bias_image_mean, bias_header, overwrite=True)
-            else:
-                Utils.log("Specific bias-combination method is not available, try again.", "info")
+                    # update the bulk holder
+                    bias_bulk[zdx] = bias_tmp_mdn
+                    dark_bulk[zdx] = dark_tmp_mdn
+                    zdx = zdx + 1
+                    del bias_tmp_mdn
+                    del dark_tmp_mdn
+
+            # update the header with relevant information
+            bias_hdu = fits.PrimaryHDU()
+            bias_header = bias_hdu.header
+            bias_header['BIAS_COMB'] = 'median'
+            bias_header['NUM_BIAS'] = total_bias
+            bias = np.median(bias_bulk[0:zdx], axis=0)
+
+            # write the image out to the master directory
+            fits.writeto(Configuration.CALIBRATION_DIRECTORY + bias_name,
+                         bias, bias_header, overwrite=True)
+
+            # update the header with relevant information
+            dark_hdu = fits.PrimaryHDU()
+            dark_header = dark_hdu.header
+            dark_header['DARK_COMB'] = 'median'
+            dark_header['NUM_DARK'] = total_dark
+            dark_header['EXPTIME'] = 300
+            dark_header['BIAS_SUB'] = 'Y'
+            dark = np.median(dark_bulk[0:zdx], axis=0)
+
+            # write the image out to the master directory
+            fits.writeto(Configuration.CALIBRATION_DIRECTORY + dark_name,
+                         dark, dark_header, overwrite=True)
+
+            Utils.log("Scalable bias and dark frames generated.", "info")
+
         else:
-            # the bias frame already exists, so go ahead and read that in
-            bias_image_mean = fits.getdata(Configuration.CALIBRATION_DIRECTORY + file_name, 0)
-
-        return bias_image_mean
-
-    @staticmethod
-    def mk_dark(time_scale, overwrite_dark, combine_type='median'):
-        """ This function will make the master dark frame using the provided image list.
-        :parameter time_scale - the length of the exposure for the dark frames
-        :parameter overwrite_dark - Y/N if you want to force the current file to be overwritten
-        :parameter combine_type - Either median or mean depending on how you want to combine the files
-
-        :return - The dark frame is returned and written to the calibration directory
-        """
-
-        # make the file name
-        file_name = str(time_scale) + 's_dark_' + Configuration.FILE_EXTENSION
-
-        if (os.path.isfile(Configuration.CALIBRATION_DIRECTORY + file_name) == 0) | (overwrite_dark == 'Y'):
-
-            if combine_type == 'mean':
-                # check if the temporary files exist
-                chk_dark_list = Utils.get_file_list(Configuration.DARK_DIRECTORY,
-                                                    str(time_scale) + Configuration.FILE_EXTENSION)
-
-                # get the image list
-                images = pd.read_csv(Configuration.CALIBRATION_DIRECTORY + 'dark_list.csv', sep=',')
-                image_list = images.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.Files, axis=1).to_list()
-
-                nfiles = len(image_list)
-                if len(chk_dark_list) == 0:
-
-                    # pull in the bias frame
-                    bias = Preprocessing.mk_bias(Configuration.BIAS_DIRECTORY, combine_type='mean')
-
-                    # update the log
-                    Utils.log("Generating a master dark frame for time scale " + str(time_scale) +
-                              "s from multiple files using a mean combination. There are "
-                              + str(nfiles) + " images to combine.", "info")
-
-                    # set the temporary number file count
-                    tmp_num = 0
-
-                    # pull the header information from the first file of the set
-                    dark_header = fits.getheader(image_list[0])
-
-                    for kk in range(0, nfiles):
-                        # read in the bias frame
-                        dark_tmp = fits.getdata(image_list[kk]).astype('float')
-
-                        # initialize if it is the first file, otherwise....
-                        try:
-                            dark_image = (dark_image - bias) + dark_tmp
-                        except:
-                            dark_image = dark_tmp - bias
-
-                        # update the log to keep an eye on progress
-                        if (kk % 20) == 0:
-                            Utils.log(str(kk + 1) + " files read in. " +
-                                      str(nfiles - kk - 1) + " files remain.", "info")
-
-                        # write out the temporary files to save memory when possible
-                        if ((kk % 100 == 0) & (kk > 0)) | (kk == nfiles - 1):
-                            # update the log
-                            Utils.log("Writing temporary file " + str(tmp_num) + ". " +
-                                      str(nfiles - kk - 1) + " files remain.", "info")
-
-                            # write out the temporary file
-                            fits.writeto(Configuration.DARK_DIRECTORY + str(tmp_num) + "_"
-                                         + str(time_scale) + "s" + "_tmp_dark.fits",
-                                         dark_image, dark_header, overwrite=True)
-                            del dark_image  # save memory
-                        del dark_tmp  # save memory
-                else:
-                    Utils.log("Temporary dark files found. Skipping generating files. "
-                              "Delete them if you need to!", "info")
-                # get the temporary file list
-                tmp_dark_list = Utils.get_file_list(Configuration.DARK_DIRECTORY, Configuration.FILE_EXTENSION)
-
-                # combine all of the temporary files
-                for kk in range(0, len(tmp_dark_list)):
-                    # read in the bias frame
-                    dark_tmp = fits.getdata(Configuration.BIAS_DIRECTORY + tmp_dark_list[kk]).astype('float')
-
-                    # initialize if it is the first file, otherwise....
-                    try:
-                        dark_image_fin = dark_image_fin + dark_tmp
-                    except:
-                        dark_image_fin = dark_tmp
-                del dark_tmp
-
-                # generate the mean bias file
-                dark_image_mean = dark_image_fin / nfiles
-                del dark_image_fin
-
-                # update the header with relevant information
-                dark_header['DARK_COMB'] = 'mean'
-                dark_header['NUM_DARK'] = nfiles
-                dark_header['EXPTIME'] = time_scale
-
-                # write the image out to the master directory
-                fits.writeto(Configuration.CALIBRATION_DIRECTORY + file_name,
-                             dark_image_mean, dark_header, overwrite=True)
-            else:
-                Utils.log("Specific bias-combination method is not available, try again.", "info")
-        else:
-            # the bias frame already exists, so go ahead and read that in
-            bias_image_mean = fits.getdata(Configuration.CALIBRATION_DIRECTORY + file_name, 0)
-
-        return bias_image_mean
+            bias = fits.getdata(Configuration.CALIBRATION_DIRECTORY + 'bias.fits')
+            dark = fits.getdata(Configuration.CALIBRATION_DIRECTORY + 'dark.fits')
+        return bias, dark
 
     @staticmethod
     def mk_flat(flat_exp=5, dark_exp=300):
         """ This function will make the master flat frame using the provided image list.
         :parameter flat_exp - The exposure time for the flat frames
         :parameter dark_exp - The exposure time for the dark frames
-        :parameter combine_type - Mean/Median depending on how you want to combine the flat frame
 
         :return - The flat field for the given date is returned and written to the calibration directory
         """
 
         if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + "flat.fits") == 0:
 
-            # read in the bias file
-            bias = Preprocessing.mk_bias(bias_overwrite='N', combine_type='mean')
-            dark = Preprocessing.mk_dark(overwrite_dark='N', combine_type='mean')
+            # read in the bias frame and dark frame
+            bias = fits.getdata(Configuration.CALIBRATION_DIRECTORY + 'bias.fits')
+            dark = fits.getdata(Configuration.CALIBRATION_DIRECTORY + 'dark.fits')
+
+            # what are the sizes of the over scan?
+            ovs_x_size = 180
+            ovs_y_size = 20
+
+            # what are the sizes of each chip (not including the over scan)?
+            chip_x_size = 1320
+            chip_y_size = 5280
+
+            # what is the full size of the chip (including over scan)
+            full_chip_x = chip_x_size + ovs_x_size
+            full_chip_y = chip_y_size + ovs_y_size
 
             # get the image list
             images = pd.read_csv(Configuration.CALIBRATION_DIRECTORY + 'flat_list.csv', sep=',')
-            image_list = images.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.Files, axis=1).to_list()
+            image_list = images.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.File, axis=1).to_list()
 
             # determine the number of loops we need to move through for each image
             nfiles = len(image_list)
@@ -266,25 +217,26 @@ class Preprocessing:
                 hold_bulk = full_bulk
 
             # here is the 'holder'
-            hold_data = np.ndarray(shape=(hold_bulk, Configuration.AXS_Y, Configuration.AXS_X))
+            hold_data = np.ndarray(shape=(hold_bulk, Configuration.AXS_Y_RW, Configuration.AXS_X_RW))
 
             # update the log
             Utils.log("Generating a master flat field from multiple files in bulks of " + str(nbulk) +
                       " images. There are " + str(nfiles) + " images to combine, which means there should be " +
                       str(hold_bulk) + " mini-files to combine.", "info")
 
+            tmp_num = 0
             for kk in range(0, hold_bulk):
 
                 # loop through the images in sets of nbulk
                 if kk < full_bulk:
                     # generate the image holder
-                    block_hold = np.ndarray(shape=(nbulk, Configuration.AXS_Y, Configuration.AXS_X))
+                    block_hold = np.ndarray(shape=(nbulk, Configuration.AXS_Y_RW, Configuration.AXS_X_RW))
 
                     # generate the max index
                     mx_index = nbulk
                 else:
                     # generate the image holder
-                    block_hold = np.ndarray(shape=(part_bulk, Configuration.AXS_Y, Configuration.AXS_X))
+                    block_hold = np.ndarray(shape=(part_bulk, Configuration.AXS_Y_RW, Configuration.AXS_X_RW))
 
                     # generate the max index
                     mx_index = part_bulk
@@ -297,6 +249,8 @@ class Preprocessing:
 
                 # now loop through the images
                 for jj in range(loop_start, mx_index + loop_start):
+                    # make a copy of the bias frame
+                    bias_scl = bias.copy()
 
                     # read in the flat file
                     flat_tmp, flat_head = fits.getdata(image_list[jj], header=True)
@@ -304,14 +258,51 @@ class Preprocessing:
                     # get the scale factor for the dark frame
                     dark_scale = dark_exp / flat_exp
 
-                    # remove the bias frame from the temporary flat field and scale based on exposure time
-                    block_hold[idx_cnt] = ((flat_tmp - bias) - (dark / dark_scale))
+                    # move through x and y to mask the "image" parts of hte image
+                    for x in range(0, Configuration.AXS_X_RW, full_chip_x):
+                        for y in range(0, Configuration.AXS_Y_RW, full_chip_y):
+
+                            if y == 0:
+                                # pull out the overscan from the raw image and set the "image" to 0
+                                img_slice = flat_tmp[y:y + full_chip_y, x:x + full_chip_x].copy()
+                                img_slice[0:chip_y_size, 0:chip_x_size] = 0
+                            else:
+                                # pull out the overscan from the raw image and set the "image" to 0
+                                img_slice = flat_tmp[y:y + full_chip_y, x:x + full_chip_x].copy()
+                                img_slice[ovs_y_size:ovs_y_size + chip_y_size, 0:chip_x_size] = 0
+
+                            # put the clipped image into the holder image
+                            bias_scl[y:y + full_chip_y, x:x + full_chip_x] = (
+                                        bias_scl[y:y + full_chip_y, x:x + full_chip_x] +
+                                        np.median(img_slice[img_slice > 0]))
+
+                    # now remove the bias from the image
+                    flat_bias = flat_tmp - bias_scl
+
+                    # now remove the dark current from the image
+                    block_hold[idx_cnt] = flat_bias - (dark / dark_scale)
+
+                    if (jj % 20) == 0:
+                        Utils.log(str(jj + 1) + " files read in. " +
+                                  str(nfiles - jj - 1) + " files remain.", "info")
 
                     # increase the iteration
                     idx_cnt += 1
-
+                    del flat_tmp
+                    del flat_bias
+                    del bias_scl
                 # median the data into a single file
                 hold_data[kk] = np.median(block_hold, axis=0)
+                del block_hold
+
+                # write out the temporary file
+                if tmp_num < 10:
+                    fits.writeto(Configuration.FLAT_DIRECTORY + '0' + str(tmp_num) + "_tmp_flat.fits",
+                                 hold_data[kk], overwrite=True)
+                else:
+                    fits.writeto(Configuration.FLAT_DIRECTORY + str(tmp_num) + "_tmp_flat.fits",
+                                 hold_data[kk], overwrite=True)
+                tmp_num = tmp_num + 1
 
             # median the mini-images into one large image
             flat_image = np.median(hold_data, axis=0)
@@ -363,9 +354,30 @@ class Preprocessing:
         all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:30]
 
         # get the stars in the image
-        xy = twirl.find_peaks(img[500:,500:])[0:30] + 500
+        # xy = twirl.find_peaks(img)[0:30]
+        mean, median, std = sigma_clipped_stats(img, sigma=3.0)
+        daofind = DAOStarFinder(fwhm=3.0, threshold=100)
+        sources = daofind(img - median)
 
-        if len(xy) > 30:
+        # sort based on "real" stars and only select the top 50 or so
+        sources = sources[(sources['flux'] > 0) &
+                          (sources['xcentroid'] > 2500) & (sources['ycentroid'] > 2500)]
+        sources.sort('flux', reverse=True)
+        sources = sources[0:100]
+
+        # generate the set up for twirl to match stars
+        xy = np.ndarray(shape=(len(sources), 2))
+        idx = 0
+        for xx, yy in zip(sources['xcentroid'], sources['ycentroid']):
+            xy[idx][0] = xx
+            xy[idx][1] = yy
+            idx = idx + 1
+
+        # remove double stars
+        xy = twirl.geometry.sparsify(xy, 30)
+
+        # now begin to match stars and make the header
+        try:
             # now compute the new wcs
             wcs = twirl.compute_wcs(xy, all_stars)
 
@@ -375,13 +387,7 @@ class Preprocessing:
             for idx, v in enumerate(h):
                  header[v] = (h[idx], h.comments[idx])
 
-            # add additional information such as exposure time and time of exposure
-            try:
-                header['DATE']
-            except:
-                header['EXPTIME'] = Configuration.EXP_TIME
-                header['DATE'] = Time.now().iso
-        else:
+        except:
             Utils.log("Bad image!", "info")
             header['BADIMAGE'] = 'Y'
 
@@ -426,154 +432,37 @@ class Preprocessing:
 
         # subtract the sky gradient and add back the median background
         img_sub = img - sky
-        # fin_img = img_sub + np.quantile(sky, 0.25)
+        fin_img = img_sub + bkg.background_median
+
+        # now correct the pixel line near the overscan
+        x_skip = 1320
+        y_skip = 220
+        y_full = 5280
+        for x in range(0, Configuration.AXS_X, x_skip):
+            for y in range(0, Configuration.AXS_Y, y_skip):
+
+                # get the sky from the slice and full y column
+                mdn_slc = np.median(fin_img[y:y + y_skip, x])
+                mdn = np.median(fin_img[y:y + y_full, x])
+
+                # don't do a local subtraction if there is a bright object (like a GC)
+                if mdn_slc < (mdn + 0.1 * mdn):
+                    fin_img[y:y + y_skip, x] = (fin_img[y:y + y_skip, x] -
+                                                np.median(fin_img[y:y + y_skip, x]) +
+                                                bkg.background_median)
+                else:
+                    fin_img[y:y + y_skip, x] = (fin_img[y:y + y_skip, x] -
+                                                np.median(fin_img[y:y + y_full, x]) +
+                                                bkg.background_median)
 
         # update the header
-        header['sky_medn'] = bkg.background_median
+        header['sky'] = bkg.background_median
         header['sky_sig'] = bkg.background_rms_median
-        header['sky'] = np.quantile(sky, 0.25)
         header['sky_sub'] = 'yes'
 
         # if desired, write out the sky background to the working directory
         if sky_write == 'Y':
             fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'sky_background' + Configuration.FILE_EXTENSION, sky, overwrite=True)
-            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'img' + Configuration.FILE_EXTENSION, img, overwrite=True)
-            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'img_sub' + Configuration.FILE_EXTENSION, img_sub, header=header, overwrite=True)
-
-        return img_sub, header
-
-    @staticmethod
-    def sky_subtract_old(img, header, sky_write='N'):
-        """  The function breaks the image into bxs x bxs sections to save memeory, then cleans each section
-        the sections are then recombined and smoothed to remove the transitions. The residual image is then subtracted
-        from the image and the header is updated appropriately.
-
-        :parameter img - The image to be cleaned
-        :parameter header - The header object to be updated
-        :parameter sky_write - Y/N if you want to write the residual background for de-bugging
-
-        :return img_sub, header - The cleaned image and updated header file
-        """
-
-        # use the sampling space to make the appropriate size vectors
-        lop = 2 * Configuration.PIX
-
-        # size holder for later
-        sze = int((Configuration.AXS_X / Configuration.PIX) * (Configuration.AXS_Y / Configuration.PIX) +
-                  (Configuration.AXS_X / Configuration.PIX) + (Configuration.AXS_Y / Configuration.PIX) + 1)
-
-        # calculate the sky statistics
-        sky_mean, sky_median, sky_sig = astropy.stats.sigma_clipped_stats(img, sigma=2.5)
-
-        # create holder arrays for good and bad pixels
-        x = np.zeros(shape=sze)
-        y = np.zeros(shape=sze)
-        v = np.zeros(shape=sze)
-        s = np.zeros(shape=sze)
-        nd = int(0)
-
-        # begin the sampling of the "local" sky value
-        for jj in range(0, Configuration.AXS_X + Configuration.PIX, Configuration.PIX):
-            for kk in range(0, Configuration.AXS_Y + Configuration.PIX, Configuration.PIX):
-                il = np.amax([jj - lop, 0])
-                ih = np.amin([jj + lop, Configuration.AXS_X - 1])
-                jl = np.amax([kk - lop, 0])
-                jh = np.amin([kk + lop, Configuration.AXS_Y - 1])
-                c = img[jl:jh, il:ih]
-
-                # select the median value with clipping
-                lsky_mean, lsky, ssky = astropy.stats.sigma_clipped_stats(c, sigma=2.5)
-
-                x[nd] = np.amin([jj, Configuration.AXS_X - 1])  # determine the pixel to input
-                y[nd] = np.amin([kk, Configuration.AXS_Y - 1])  # determine the pixel to input
-                v[nd] = lsky  # median sky
-                s[nd] = ssky  # sigma sky
-                nd = nd + 1
-
-        # now we want to remove any possible values which have bad sky values
-        rj = np.argwhere(v <= 0)  # stuff to remove
-        kp = np.argwhere(v > 0)  # stuff to keep
-
-        if len(rj) > 0:
-
-            # keep only the good points
-            xgood = x[kp]
-            ygood = y[kp]
-            vgood = v[kp]
-
-            for jj in range(0, len(rj[0])):
-                # select the bad point
-                xbad = x[rj[jj]]
-                ybad = y[rj[jj]]
-
-                # use the distance formula to get the closest points
-                rd = np.sqrt((xgood - xbad) ** 2. + (ygood - ybad) ** 2.)
-
-                # sort the radii
-                pp = sorted(range(len(rd)), key=lambda k: rd[k])
-
-                # use the closest 10 points to get a median
-                vnear = vgood[pp[0:9]]
-                ave = np.median(vnear)
-
-                # insert the good value into the array
-                v[rj[jj]] = ave
-
-        # now we want to remove any possible values which have bad sigmas
-        rj = np.argwhere(s >= 2 * sky_sig)
-        kp = np.argwhere(s < 2 * sky_sig)
-
-        if len(rj) > 0:
-            # keep only the good points
-            xgood = np.array(x[kp])
-            ygood = np.array(y[kp])
-            vgood = np.array(v[kp])
-
-            for jj in range(0, len(rj)):
-                # select the bad point
-                xbad = x[rj[jj]]
-                ybad = y[rj[jj]]
-
-                # use the distance formula to get the closest points
-                rd = np.sqrt((xgood - xbad) ** 2. + (ygood - ybad) ** 2.)
-
-                # sort the radii
-                pp = sorted(range(len(rd)), key=lambda k: rd[k])
-
-                # use the closest 10 points to get a median
-                vnear = vgood[pp[0:9]]
-                ave = np.median(vnear)
-                if np.isfinite(ave) == 0:
-                    ave = np.median(v[np.isfinite(v)])
-
-                # insert the good value into the array
-                v[rj[jj]] = ave
-
-        # set up a meshgrid to interpolate to
-        xi = np.linspace(0, Configuration.AXS_X - 1, Configuration.AXS_X)
-        yi = np.linspace(0, Configuration.AXS_Y - 1, Configuration.AXS_Y)
-        xx, yy = np.meshgrid(xi, yi)
-
-        # remove any nan of inf values
-        if len(v[~np.isfinite(v)]) > 0:
-            v[~np.isfinite(v)] = np.median(v[np.isfinite(v)])
-
-        # now we interpolate to the rest of the image with a cubic interpolation
-        res = griddata((x, y), v, (xx, yy), method='cubic')
-
-        # subtract the sky gradient and add back the median background
-        img_sub = img - res
-        fin_img = img_sub + np.quantile(res, 0.25)
-
-        # update the header
-        header['sky_medn'] = sky_median
-        header['sky_sig'] = sky_sig
-        header['sky'] = np.quantile(res, 0.25)
-        header['sky_sub'] = 'yes'
-
-        # if desired, write out the sky background to the working directory
-        if sky_write == 'Y':
-            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'sky_background' + Configuration.FILE_EXTENSION, res, overwrite=True)
             fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'img' + Configuration.FILE_EXTENSION, img, overwrite=True)
             fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'img_sub' + Configuration.FILE_EXTENSION, fin_img, header=header, overwrite=True)
 
@@ -602,42 +491,64 @@ class Preprocessing:
         return align_img[0], header
 
     @staticmethod
-    def bias_subtract(img, header):
-        """ This function will subtract a bias frame
-        :parameter img - The image to de-bias / de-dark
-        :parameter header - The image header file
+    def subtract_scaled_bias_dark(img, header):
+        """ This function will scale the bias frame to match the overscan and then remove the dark level.
 
-        :return bias_sub, header - The updated image and header """
+        :parameter - img - The image to remove the bias and dark frame frome
+        :parameter - header - The header of the image
 
-        # read in the bias frame and subtract
+        :return img_bias_dark, header
+        """
+
+        # read in the bias frame and dark frame
         bias = fits.getdata(Configuration.CALIBRATION_DIRECTORY + 'bias.fits')
-
-        # subtract the bias from the image
-        bias_sub = img - bias
-
-        # update the header
-        header['BIAS_SUBT'] = 'Y'
-
-        return bias_sub, header
-
-    @staticmethod
-    def dark_subtract(img, header):
-        """ This function will subtract a dark frame
-        :parameter img - The image to DARK SUBSTRACT
-        :parameter header - The image header file
-
-        :return dark_sub, header - The updated image and header """
-
-        # read in the bias frame and subtract
         dark = fits.getdata(Configuration.CALIBRATION_DIRECTORY + 'dark.fits')
 
-        # subtract the bias from the image
-        dark_sub = img - dark
+        # what are the sizes of the over scan?
+        ovs_x_size = 180
+        ovs_y_size = 20
 
+        # what are the sizes of each chip (not including the over scan)?
+        chip_x_size = 1320
+        chip_y_size = 5280
+
+        # what is the full size of the chip (including over scan)
+        full_chip_x = chip_x_size + ovs_x_size
+        full_chip_y = chip_y_size + ovs_y_size
+
+        # make a copy of the bias frame
+        bias_scl = bias.copy()
+
+        # move through x and y to mask the "image" parts of hte image
+        for x in range(0, Configuration.AXS_X_RW, full_chip_x):
+            for y in range(0, Configuration.AXS_Y_RW, full_chip_y):
+
+                if y == 0:
+                    # pull out the overscan from the raw image and set the "image" to 0
+                    img_slice = img[y:y + full_chip_y, x:x + full_chip_x].copy()
+                    img_slice[0:chip_y_size, 0:chip_x_size] = 0
+                else:
+                    # pull out the overscan from the raw image and set the "image" to 0
+                    img_slice = img[y:y + full_chip_y, x:x + full_chip_x].copy()
+                    img_slice[ovs_y_size:ovs_y_size + chip_y_size, 0:chip_x_size] = 0
+
+                # put the clipped image into the holder image
+                bias_scl[y:y + full_chip_y, x:x + full_chip_x] = (bias_scl[y:y + full_chip_y, x:x + full_chip_x] +
+                                                                  np.median(img_slice[img_slice > 0]))
+
+        # now remove the bias from the image
+        img_bias = img - bias_scl
+
+        # now remove the dark current from the image
+        img_bias_dark = img_bias - dark
+
+        # now update the image header
         # update the header
+        header['BIAS_SUBT'] = 'Y'
+        header['BIAS_TYPE'] = 'SCALE'
         header['DARK_SUBT'] = 'Y'
 
-        return dark_sub, header
+        return img_bias_dark, header
 
     @staticmethod
     def clip_image(img, header):
@@ -655,7 +566,7 @@ class Preprocessing:
 
         # what are the sizes of the over scan?
         ovs_x_size = 180
-        ovs_y_size = 40
+        ovs_y_size = 20
 
         # what are the sizes of each chip (not including the over scan)?
         chip_x_size = 1320
@@ -672,8 +583,12 @@ class Preprocessing:
             idy = 0
             for y in range(0, Configuration.AXS_Y_RW, full_chip_y):
 
-                # put the clipped image into the holder image
-                image_clip[idy:idy + chip_y_size, idx:idx + chip_x_size] = img[y:y + chip_y_size, x:x + chip_x_size]
+                if y == 0:
+                    # put the clipped image into the holder image
+                    image_clip[idy:idy + chip_y_size, idx:idx + chip_x_size] = img[y:y + chip_y_size, x:x + chip_x_size]
+                else:
+                    # put the clipped image into the holder image
+                    image_clip[idy:idy + chip_y_size, idx:idx + chip_x_size] = img[y + ovs_y_size:y + ovs_y_size + chip_y_size, x:x + chip_x_size]
 
                 # increase the size of the yclip
                 idy = idy + chip_y_size
@@ -811,29 +726,6 @@ class Preprocessing:
             # bias and flat and dark and sky and clip and plate_solve
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\
                     and (dark_subtract == 'Y') and (image_clip =='Y') and (plate_solve == 'Y'):
-                file_name =  nme_hld[0]  + '_bkcfsp' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bkfcsp' + Configuration.FILE_EXTENSION
                 
         return file_name
-
-    @staticmethod
-    def remove_overscan(img, header):
-        """ This function will remove the over scan region from the images
-        :argument img - The np.array with the image
-        :argument header - The header object
-
-        :return cut_img, header - Return the new header and cut image"""
-
-        # pull out the wcs in the header
-        w = WCS(header)
-
-        # cut the image, but maintain the appropriate header information and positioning - X & Y need to be reversed
-        cut = Cutout2D(img, (Configuration.X_CENT, Configuration.Y_CENT),
-                       (Configuration.AXIS_Y, Configuration.AXIS_X), wcs=w)
-
-        # create a new image based on the cut data
-        cut_img = cut.data
-
-        # update the header
-        header['CLIPPED'] = 'Y'
-
-        return cut_img, header
