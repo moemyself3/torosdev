@@ -1,5 +1,6 @@
 from config import Configuration
 from libraries.utils import Utils
+from libraries.preprocessing import Preprocessing
 import numpy as np
 import os
 from astropy.io import fits
@@ -9,13 +10,14 @@ from photutils.aperture import aperture_photometry
 from photutils.centroids import centroid_sources
 import pandas as pd
 import warnings
-# from FITS_tools.hcongrid import hcongrid
 from astroquery.mast import Catalogs
 from astropy.wcs import WCS
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
 matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+from astropy.stats import sigma_clipped_stats
 
 
 class Master:
@@ -27,7 +29,7 @@ class Master:
         :return - The master frame is returned and the star list is printed
         """
 
-        master, master_header = Master.mk_master(combine_type='median')
+        master, master_header = Master.mk_master()
 
         star_list = Master.master_phot(master, master_header)
 
@@ -52,7 +54,7 @@ class Master:
             # run the query
             Utils.log('Querying MAST for all stars within the toros field: ' + str(Configuration.FIELD), 'info')
             catalog_data = Catalogs.query_region(field,
-                                                 radius=Configuration.SEARCH_DIST/1.5,
+                                                 radius=Configuration.SEARCH_DIST,
                                                  catalog="Gaia").to_pandas()
             Utils.log('Query finished. ' + str(len(catalog_data)) + ' stars found.', 'info')
 
@@ -73,8 +75,8 @@ class Master:
             # add the x/y to the star data frame
             star_list['x'] = x
             star_list['y'] = y
-            star_list = star_list[(star_list.x >= 10) & (star_list.x < (Configuration.AXS_X - 10)) &
-                                  (star_list.y >= 10) & (star_list.y < (Configuration.AXS_X - 10))].copy().reset_index(drop=True)
+            star_list = star_list[(star_list.x >= 530) & (star_list.x < 10465) &
+                                  (star_list.y >= 490) & (star_list.y < 10045)].copy().reset_index(drop=True)
 
             star_list['xcen'], star_list['ycen'] = centroid_sources(master,
                                                                     star_list.x.to_numpy(),
@@ -103,7 +105,7 @@ class Master:
             sky = phot_table['aperture_sum_1'] / annulus_aperture.area
 
             # subtract the sky background to get the stellar flux and square root of total flux to get the error
-            flux = np.array(phot_table['aperture_sum_0'] - sky * aperture.area)
+            flux = np.array(phot_table['aperture_sum_0'])
 
             # calculate the expected photometric error
             flux_er = np.sqrt((phot_table['aperture_sum_0']))
@@ -118,7 +120,8 @@ class Master:
             star_list['master_flux'] = flux
             star_list['master_flux_er'] = flux_er
             star_list['sky'] = sky
-            star_list = star_list.reset_index()
+            star_list = star_list[star_list['master_flux'] > 0]
+            star_list = star_list.sort_values(by='master_mag').reset_index()
             star_list = star_list.rename(columns={'index': 'star_id'})
 
             star_list.to_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt', sep=' ', index=False)
@@ -129,7 +132,7 @@ class Master:
         return star_list
 
     @staticmethod
-    def mk_master(combine_type='median'):
+    def mk_master():
         """ This function will make the master frame that will be used for the differencing
 
         :return - The master frame is returned and written to the master directory
@@ -139,43 +142,36 @@ class Master:
 
         if os.path.isfile(Configuration.MASTER_DIRECTORY + file_name) == 0:
 
+            chk_tmp_files = Utils.get_file_list(Configuration.MASTER_TMP_DIRECTORY, Configuration.FILE_EXTENSION)
+
             # get the image list
             image_list, dates = Utils.get_all_files_per_field(Configuration.CLEAN_DIRECTORY,
                                                               Configuration.FIELD,
-                                                              Configuration.FILE_EXTENSION)
+                                                              'clean')
             # determine the number of loops we need to move through for each image
             nfiles = len(image_list)
 
-            if combine_type == 'mean':
-                # update the log
-                Utils.log("Generating the master frame from multiple files using a mean combination. There are "
-                          + str(nfiles) + " images to combine.", "info")
+            # loop through the image headers and get the sky background
+            sky_values = np.zeros(nfiles)
+            for idx, file in enumerate(image_list):
+                sky_values[idx] = fits.getheader(file)['sky']
 
-                for kk in range(0, nfiles):
-                    # read in the images for the master frame
-                    img_tmp = fits.getdata(image_list[kk])
+            # get the statistics on the images
+            img_mn, img_mdn, img_std = sigma_clipped_stats(sky_values, sigma=2)
+            gd_idx = np.argwhere(sky_values <= img_mdn + 2 * img_std)  # get the index values where the background is low
 
-                    # initialize if it's the first file, otherwise....
-                    if kk == 0:
-                        master = img_tmp
-                    else:
-                        master = master + img_tmp
+            # update the image list to only include the "good" files
+            image_list = np.array(image_list)[gd_idx].reshape(-1).tolist()
 
-                # generate the mean master file
-                master = master / nfiles
+            # remove bad dates by eye
+            img_by_night = np.array([line.split('/')[7] for line in image_list]).reshape(-1)
+            gd_idx = np.argwhere(img_by_night != '2024-10-03')
 
-                # pull the header information from the first file
-                master_header = fits.getheader(image_list[0])
+            image_list = np.array(image_list)[gd_idx].reshape(-1).tolist()
+            nfiles = len(image_list)
 
-                master_header['COMB'] = 'mean'
-                master_header['NUM_COMB'] = nfiles
-
-                # write the image out to the master directory
-                fits.writeto(Configuration.MASTER_DIRECTORY + file_name,
-                             master, master_header, overwrite=True)
-
-            elif combine_type == 'median':
-
+            if len(chk_tmp_files) == 0:
+                Utils.log("No temporary Master files found. Generating new ones.", "info")
                 # determine the number of loops we need to move through for each image
                 nbulk = 20
 
@@ -196,6 +192,7 @@ class Master:
                           " images. There are " + str(nfiles) + " images to combine, which means there should be " +
                           str(hold_bulk) + " mini-files to median combine.", "info")
 
+                cnt_img = 0
                 for kk in range(0, hold_bulk):
 
                     # loop through the images in sets of nbulk
@@ -222,32 +219,64 @@ class Master:
                     for jj in range(loop_start, mx_index + loop_start):
                         # read in the image directly into the block_hold
 
-                        master_tmp, master_head = fits.getdata(image_list[jj], header=True)
+                        master_tmp, master_tmp_head = fits.getdata(image_list[jj], header=True)
 
                         if (kk == 0) & (jj == 0):
-                            block_hold[idx_cnt] = master_tmp
-                            master_hold = master_tmp
-                            master_header = master_head
+                            block_hold[idx_cnt] = master_tmp - master_tmp_head['sky']
+                            master_header = master_tmp_head
+                            del master_tmp
+                            Utils.log("Mini file " + str(kk) + " image " + str(jj) +
+                                      " aligned. " + str(nfiles - cnt_img) + " remain.",
+                                      "info")
                         else:
-                            # block_hold[idx_cnt], footprint = aa.register(master_hold, master_tmp)
-                            tmp = hcongrid(master_tmp, master_head, master_header)
-                            block_hold[idx_cnt] = tmp
+                            tmp = Preprocessing.align_img(master_tmp, master_tmp_head, master_header)
+                            Utils.log("Mini file " + str(kk) + " image " + str(jj) +
+                                      " aligned. " + str(nfiles - cnt_img) + " remain.",
+                                      "info")
+                            block_hold[idx_cnt] = tmp - master_tmp_head['sky']
+                            del tmp
+                            del master_tmp
 
+                        cnt_img = cnt_img + 1
                         # increase the iteration
                         idx_cnt += 1
+                # median the data into a single file
+                hold_data[kk] = np.median(block_hold, axis=0)
+                del block_hold
+                if kk < 10:
+                    fits.writeto(Configuration.MASTER_TMP_DIRECTORY + "0" + str(kk) + "_tmp_master.fits",
+                                 hold_data[kk], master_header, overwrite=True)
+                else:
+                    fits.writeto(Configuration.MASTER_TMP_DIRECTORY + str(kk) + "_tmp_master.fits",
+                                 hold_data[kk], master_header, overwrite=True)
+            else:
+                Utils.log("Legacy files found. Creating Master frame from these files. "
+                          "Delete if you do not want this!", "info")
+                hold_bulk = len(chk_tmp_files)
+                # here is the 'holder'
+                hold_data = np.ndarray(shape=(hold_bulk, Configuration.AXS_Y, Configuration.AXS_X))
 
-                    # median the data into a single file
-                    hold_data[kk] = np.median(block_hold, axis=0)
+                for kk, tmp_file in enumerate(chk_tmp_files):
+                    master_tmp, master_tmp_head = fits.getdata(Configuration.MASTER_TMP_DIRECTORY + tmp_file, header=True)
+                    hold_data[kk] = master_tmp
+                    master_header = master_tmp_head
 
-                # median the mini-images into one large image
-                master = np.median(hold_data, axis=0)
 
-                master_header['MAST_COMB'] = 'median'
-                master_header['NUM_MAST'] = nfiles
+            # median the mini-images into one large image
+            master = np.median(hold_data, axis=0)
 
-                # write the image out to the master directory
-                fits.writeto(Configuration.MASTER_DIRECTORY + file_name,
-                             master, master_header, overwrite=True)
+            master_header['MAST_COMB'] = 'median'
+            master_header['NUM_MAST'] = nfiles
+
+            # now mask the bad parts of the image
+            master[0:490, :] = 0
+            master[10045:-1, :] = 0
+            master[:, 0:530] = 0
+            master[:, 10465:-1] = 0
+
+            # write the image out to the master directory
+            fits.writeto(Configuration.MASTER_DIRECTORY + file_name,
+                         master, master_header, overwrite=True)
         else:
             master, master_header = fits.getdata(Configuration.MASTER_DIRECTORY + file_name, header=True)
 

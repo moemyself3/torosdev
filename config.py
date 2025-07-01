@@ -23,10 +23,10 @@ class Configuration:
     TRANSIENT_DEC = -21.9258309  # -38.93038375  # -30.269894 #
 
     # steps to skip
-    CLEAN_SKIP = 'N'
+    CLEAN_SKIP = 'Y'
     WRITE_SKY = 'N'
     MASTER_SKIP = 'Y'
-    DIFFERENCE_SKIP = 'Y'
+    DIFFERENCE_SKIP = 'N'
     PHOTOMETRY_SKIP = 'Y'
     LIGHTCURVE_SKIP = 'Y'
 
@@ -47,10 +47,10 @@ class Configuration:
     AXS = 10560
 
     # update the differencing information, primarily the number of stars to use, and the kernel size
-    KRNL = 2  # kernel size 2 * KNRL + 1
+    KRNL = 3  # kernel size 2 * KNRL + 1
     STMP = 15  # stamp size ot use 2 * STMP + 1
     ORDR = 0  # order of the kernel to use, 0 is stationary, 1 or 2 is spatially varying
-    NRSTARS = 3000  # number of stars used to solve for kernel
+    NRSTARS = 4000  # number of stars used to solve for kernel
     BRIGHT_STARS = 20000  # the top stars to search for in kernel stars
     KERNEL_LIMIT = 0.5  # the maximum allowable offset in zeropoint in magnitudes
     AXS_LIMIT = 100  # the number of pixel close to the edge of the frame to use
@@ -84,18 +84,19 @@ class Configuration:
     RAW_DIRECTORY = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/TOROS/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
     MASTER_DIRECTORY = DATA_DIRECTORY + "master/"
+    MASTER_TMP_DIRECTORY = MASTER_DIRECTORY + "tmp_master/"
+    CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids/"
     CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration/"
     BIAS_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_bias/"
     FLAT_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_flat/"
     DARK_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_dark/"
-    CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids/"
     LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc/"
     DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
     CLEAN_DATE_DIRECTORY = CLEAN_DIRECTORY + DATE + "/"
 
     # directory_list
     DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY,
-                   QUERIES_DIRECTORY, CLEAN_DIRECTORY, MASTER_DIRECTORY, LIGHTCURVE_DIRECTORY,
+                   QUERIES_DIRECTORY, CLEAN_DIRECTORY, MASTER_DIRECTORY, MASTER_TMP_DIRECTORY, LIGHTCURVE_DIRECTORY,
                    CENTROID_DIRECTORY, RAW_DIRECTORY, BIAS_DIRECTORY, DARK_DIRECTORY, FLAT_DIRECTORY,
                    DIFFERENCED_DIRECTORY, CLEAN_DATE_DIRECTORY, CODE_DIFFERENCE_DIRECTORY]
 

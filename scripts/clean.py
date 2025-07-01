@@ -32,7 +32,7 @@ class Clean:
         Utils.log("Getting file list...", "info")
         files, date_dirs = Utils.get_all_files_per_field(Configuration.RAW_DIRECTORY,
                                                          Configuration.FIELD,
-                                                         Configuration.RAW_FILE_EXTENSION)
+                                                         'raw')
 
         # make the output directories (clean and diff)
         output_dirs = []

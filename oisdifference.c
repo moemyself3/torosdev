@@ -147,7 +147,7 @@ int main (void)
     P = nstars; // number of star stamps to use //
     cent = (nk-1)/2;//center of the kernel//
     
-    printf("The kernel size is %d x %d, the polynomial degree is %d, and %d stars were used.\n", L, L, d, P);
+    //printf("The kernel size is %d x %d, the polynomial degree is %d, and %d stars were used.\n", L, L, d, P);
     
     Rs = (double*) malloc(sizeof(double)*S);
     Ss = (double*) malloc(sizeof(double)*S);

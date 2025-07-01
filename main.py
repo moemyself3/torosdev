@@ -21,7 +21,7 @@ else:
     Utils.log("Skipping master frame generation.", "info")
 
 if Configuration.DIFFERENCE_SKIP == 'N':
-    BigDiff.difference_images(star_list)
+    BigDiff.difference_images()
 else:
     Utils.log("Skipping image differencing.", "info")
 

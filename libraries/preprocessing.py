@@ -3,20 +3,21 @@ from config import Configuration
 from libraries.utils import Utils
 import numpy as np
 import os
-from astropy.time import Time
+import numpy as np
+import astropy.io.fits as pyfits
+import astropy.wcs as pywcs
+from astropy import coordinates
+from astropy import units as u
+import scipy.ndimage
 from astropy.io import fits
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 import twirl
 from photutils.detection import DAOStarFinder
-from scipy.signal import medfilt
 from astropy.stats import SigmaClip
 from photutils.background import Background2D, MedianBackground
 from astropy.stats import sigma_clipped_stats
 import astroalign as aa
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 
 class Preprocessing:
 
@@ -469,28 +470,6 @@ class Preprocessing:
         return fin_img, header
 
     @staticmethod
-    def align_img(img, header, ref_path):
-        """ This function will align to the ref_path image
-        :parameter img - The image to flatten
-        :parameter header - The image header file
-        :parameter ref_path - The path to the reference iamge
-
-        :return align_img, header - The updated image and header """
-
-        # read in the reference image for alignment
-        ref, ref_header = fits.getdata(ref_path, header=True)
-
-        ref_files = Utils.get_file_list(Configuration.CLEAN_DIRECTORY + Configuration.REF_DATE + '/',
-                                        Configuration.FILE_EXTENSION)
-        ref1, ref1_header = fits.getdata(Configuration.CLEAN_DIRECTORY + Configuration.REF_DATE + '/' + ref_files[0],
-                                         header=True)
-        # align the image
-        # align_img, footprint = aa.register(img, ref)
-        transf, (source_list, target_list) = aa.find_transform(ref, ref1)
-        align_img = aa.apply_transform(transf, img, ref1)
-        return align_img[0], header
-
-    @staticmethod
     def subtract_scaled_bias_dark(img, header):
         """ This function will scale the bias frame to match the overscan and then remove the dark level.
 
@@ -729,3 +708,54 @@ class Preprocessing:
                 file_name =  nme_hld[0]  + '_bkfcsp' + Configuration.FILE_EXTENSION
                 
         return file_name
+
+    @staticmethod
+    def align_img(image, header1, header2, preserve_bad_pixels=True):
+        """
+        This function is based on the FITS_tools utility hcongrid and it interpolates an image from one .fits header
+        to another
+
+        :parameter image - the image to transform
+        :parameter header1 - the header of the image
+        :parameter header2 - the header to transform to
+        :parameter preserve_bad_pixels - Try to set NAN pixels to NAN in the zoomed image.  Otherwise, bad
+            pixels will be set to zero
+
+        :return newimage, header3 - The image which has been transformed and the header with the new coordinates
+
+        """
+
+        # convert the headers to WCS objects
+        wcs1 = pywcs.WCS(header1)
+        wcs1.naxis1 = header1['NAXIS1']
+        wcs1.naxis2 = header1['NAXIS2']
+        wcs2 = pywcs.WCS(header2)
+        wcs2.naxis1 = header2['NAXIS1']
+        wcs2.naxis2 = header2['NAXIS2']
+
+        # get the shape
+        outshape = [wcs2.naxis2, wcs2.naxis1]
+        yy2, xx2 = np.indices(outshape)
+
+        # get the world coordinates of the output image
+        lon2, lat2 = wcs2.wcs_pix2world(xx2, yy2, 0)
+        xx1, yy1 = wcs1.wcs_world2pix(lon2, lat2, 0)
+
+        # make a grid for the image to transform to
+        grid1 = np.array([yy1.reshape(outshape), xx1.reshape(outshape)])
+
+        # identify bad pixels
+        bad_pixels = np.isnan(image) + np.isinf(image)
+        image[bad_pixels] = 0
+
+        # make the new image
+        newimage = scipy.ndimage.map_coordinates(image, grid1)
+
+        # replace bad pixels
+        if preserve_bad_pixels:
+            newbad = scipy.ndimage.map_coordinates(bad_pixels, grid1, order=0,
+                                                   mode='constant',
+                                                   cval=np.nan)
+            newimage[newbad] = np.nan
+
+        return newimage
