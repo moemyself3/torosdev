@@ -144,8 +144,9 @@ class Master:
 
             # get the image list
             full_image_list, dates = Utils.get_all_files_per_field(Configuration.CLEAN_DIRECTORY,
-                                                              Configuration.FIELD,
-                                                              'clean')
+                                                                   Configuration.FIELD,
+                                                                   'clean',
+                                                                   Configuration.FILE_EXTENSION)
             # determine the number of loops we need to move through for each image
             full_nfiles = len(full_image_list)
 

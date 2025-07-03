@@ -94,11 +94,12 @@ class Utils:
         file.close()
 
     @staticmethod
-    def get_all_files_per_field(path, field, step):
+    def get_all_files_per_field(path, field, step, file_ext):
         """ This function will return all the files for a given TOROS field without their extension.
         :parameter path - A string with the path of the file.
         :parameter field - The TOROS field you are interested in searching for
         :parameter step - where in the process are you looking for files? raw, clean, etc
+        :parameter file_ext - the type of file you are looking for
 
         :return files_no_ext - A list of files without their extension.
         """
@@ -114,8 +115,9 @@ class Utils:
             try:
                 for x in os.listdir(z):
                     if ((x.split('_')[0] + '_' + x.split('_')[1] == field) |
-                            (x.split('_')[0] == field)): # x.endswith(file_ext):
-                        files_no_ext.append(z + x)
+                            (x.split('_')[0] == field)):
+                        if x.endswith(file_ext):
+                            files_no_ext.append(z + x)
                 dte_dir.append(f)
             except:
                 Utils.log("Field " + field + " not observed on " + f, "info")

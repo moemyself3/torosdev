@@ -23,8 +23,8 @@ class Configuration:
     CLEAN_SKIP = 'Y'
     WRITE_SKY = 'N'
     MASTER_SKIP = 'Y'
-    DIFFERENCE_SKIP = 'N'
-    PHOTOMETRY_SKIP = 'Y'
+    DIFFERENCE_SKIP = 'Y'
+    PHOTOMETRY_SKIP = 'N'
     LIGHTCURVE_SKIP = 'Y'
 
     # telescope information

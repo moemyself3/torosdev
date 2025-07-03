@@ -26,7 +26,7 @@ else:
     Utils.log("Skipping image differencing.", "info")
 
 if Configuration.PHOTOMETRY_SKIP == 'N':
-    Lightcurves.generate_flux_files(star_list)
+    Lightcurves.generate_flux_files()
 else:
     Utils.log("Skipping photometry.", "info")
 

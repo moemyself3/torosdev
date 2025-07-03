@@ -27,6 +27,7 @@ class BigDiff:
         # get the image list to difference
         files, dates = Utils.get_all_files_per_field(Configuration.CLEAN_DIRECTORY,
                                                      Configuration.FIELD,
+                                                     'clean',
                                                      Configuration.FILE_EXTENSION)
         nfiles = len(files)
 

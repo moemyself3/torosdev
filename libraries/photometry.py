@@ -13,7 +13,8 @@ from astropy.time import Time
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
-matplotlib.use('TkAgg')
+matplotlib.use("Qt5Agg")
+import matplotlib.pyplot as plt
 
 
 class Photometry:
@@ -31,10 +32,8 @@ class Photometry:
         img, header = fits.getdata(img_name, header=True)
 
         # get the various important header information
-        # jd = 2460579.154861 + (int(img_name.split('_')[-2])-168) * (300. / (24. * 60. * 60.))
         time = Time(header['DATE'], format='isot', scale='utc')
         jd = time.jd
-        exp_time = header['EXP_TIME']
 
         # get the stellar positions from the master frame
         positions = np.transpose((star_list['x'], star_list['y']))
@@ -48,18 +47,16 @@ class Photometry:
         # run the photometry to get the data table
         phot_table = aperture_photometry(img, apers, method='exact')
 
-        # extract the sky background for each annuli based on either a global or local subtraction
-        # sky = phot_table['aperture_sum_1'] / aperture_annulus.area
-        sky = np.median(img)
-
-        # subtract the sky background to get the stellar flux and square root of total flux to get the photometric error
-        img_flux = np.array(phot_table['aperture_sum_0'] - (sky * aperture.area))
+        # extract the flux from the table
+        # the sky was subtracted during the calibration and differencing steps, the raw photometry should be fine
+        img_flux = np.array(phot_table['aperture_sum_0'])
 
         # calculate the expected photometric error
-        star_error = np.sqrt(np.abs(phot_table['aperture_sum_0']))
+        star_error = np.array(np.abs(phot_table['aperture_sum_0']))
+        sky_error = header['sky'] * np.pi * Configuration.APER_SIZE ** 2
 
         # combine sky and signal error in quadrature
-        img_flux_er = np.array(np.sqrt(star_error ** 2))
+        img_flux_er = np.sqrt(star_error + sky_error)
 
         # combine the fluxes
         flux = img_flux.astype(float) + star_list['master_flux'].to_numpy().astype(float)
@@ -74,10 +71,9 @@ class Photometry:
 
         dmag = mag[~np.isnan(mag)] - m_mag[~np.isnan(mag)]
 
-        f_mags = np.arange(np.floor(mag[~np.isnan(mag)].min()), np.floor(mag[~np.isnan(mag)].max())) + 0.5
+        f_mags = np.arange(6, 16) + 0.5
         n_mags = np.zeros(len(f_mags))
-        for mag_idx, m_lw in enumerate(np.arange(np.floor(mag[~np.isnan(mag)].min()),
-                                                 np.floor(mag[~np.isnan(mag)].max()))):
+        for mag_idx, m_lw in enumerate(f_mags):
             dmag_bin = dmag[np.argwhere((mag[~np.isnan(mag)] > m_lw) & (mag[~np.isnan(mag)] < m_lw + 1))]
             dmag_mn, dmag_md, dmag_sg = sigma_clipped_stats(np.array(dmag_bin, dtype=float), sigma=2.5)
             n_mags[mag_idx] = dmag_md
@@ -92,12 +88,13 @@ class Photometry:
         flux_file['flux_er'] = flux_er
         flux_file['mag'] = mag
         flux_file['mag_er'] = mag_er
-        flux_file['sky'] = sky
+        flux_file['sky'] = header['SKY']
         flux_file['jd'] = jd
         flux_file['zpt'] = off
         flux_file['cln'] = np.where(np.isnan(mag), -9.999999, mag - off)
 
-        flux_file.to_csv(fin_name, header=True, index=False)
+        # flux_file.to_csv(fin_name, header=True, index=False)
+        flux_file.to_csv("/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/Reserach/TOROS/flux/" + fin_name.split('/')[-1], header=True, index=False)
         return
 
     @staticmethod
