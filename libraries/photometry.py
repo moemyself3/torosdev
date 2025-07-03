@@ -6,11 +6,9 @@ from astropy.stats import sigma_clipped_stats
 from photutils.aperture import CircularAperture
 from photutils.aperture import CircularAnnulus
 from photutils.aperture import aperture_photometry
-from photutils.centroids import centroid_sources
 import numpy as np
 import pandas as pd
 import warnings
-from astropy.wcs import WCS
 from astropy.time import Time
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=Warning)

@@ -9,12 +9,9 @@ class Configuration:
     FILE_EXTENSION = '.fits'
 
     # update for different data products
-    FIELD = 'FIELD_0e.001' # 'FIELD_28.01c'  # 'FIELD_2f.0d2'  # # FIELD_30.000
-    RA = 6.0223292 # 46.636  # 307.317 # # 0.723
-    DEC = -72.0814444 # -39.405  # -30.551 #  # -29.286
-    DATE = '2024-10-11'
-    PHOTOMETRY = 'PSF'
-    APERTURE_SHAPE = 'circ'
+    FIELD = 'FIELD_0e.001'
+    RA = 6.0223292
+    DEC = -72.0814444
 
     # is there a transient you want the light curve for?
     TRANSIENT_LC = 'Y'
@@ -47,8 +44,8 @@ class Configuration:
     AXS = 10560
 
     # update the differencing information, primarily the number of stars to use, and the kernel size
-    KRNL = 3  # kernel size 2 * KNRL + 1
-    STMP = 15  # stamp size ot use 2 * STMP + 1
+    KRNL = 2  # kernel size 2 * KNRL + 1
+    STMP = 10  # stamp size ot use 2 * STMP + 1
     ORDR = 0  # order of the kernel to use, 0 is stationary, 1 or 2 is spatially varying
     NRSTARS = 4000  # number of stars used to solve for kernel
     BRIGHT_STARS = 20000  # the top stars to search for in kernel stars
@@ -83,7 +80,8 @@ class Configuration:
     DATA_DIRECTORY = "/Users/yuw816/Data/toros/commissioning/"
     RAW_DIRECTORY = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/TOROS/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
-    MASTER_DIRECTORY = DATA_DIRECTORY + "master/"
+    MASTER_MAIN_DIRECTORY = DATA_DIRECTORY + "master/"
+    MASTER_DIRECTORY = DATA_DIRECTORY + "master/" + FIELD + "/"
     MASTER_TMP_DIRECTORY = MASTER_DIRECTORY + "tmp_master/"
     CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids/"
     CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration/"
@@ -92,13 +90,12 @@ class Configuration:
     DARK_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_dark/"
     LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc/"
     DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
-    CLEAN_DATE_DIRECTORY = CLEAN_DIRECTORY + DATE + "/"
 
     # directory_list
     DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY,
-                   QUERIES_DIRECTORY, CLEAN_DIRECTORY, MASTER_DIRECTORY, MASTER_TMP_DIRECTORY, LIGHTCURVE_DIRECTORY,
-                   CENTROID_DIRECTORY, RAW_DIRECTORY, BIAS_DIRECTORY, DARK_DIRECTORY, FLAT_DIRECTORY,
-                   DIFFERENCED_DIRECTORY, CLEAN_DATE_DIRECTORY, CODE_DIFFERENCE_DIRECTORY]
+                   QUERIES_DIRECTORY, CLEAN_DIRECTORY, MASTER_MAIN_DIRECTORY, MASTER_DIRECTORY, MASTER_TMP_DIRECTORY,
+                   LIGHTCURVE_DIRECTORY, CENTROID_DIRECTORY, RAW_DIRECTORY, BIAS_DIRECTORY, DARK_DIRECTORY,
+                   FLAT_DIRECTORY, DIFFERENCED_DIRECTORY, CODE_DIFFERENCE_DIRECTORY]
 
     # BROKER CONFIGURATION SPECIFICS
     LISTEN_NED_WAIT = 1

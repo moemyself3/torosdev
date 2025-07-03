@@ -33,8 +33,6 @@ class Master:
 
         star_list = Master.master_phot(master, master_header)
 
-        # kernel_stars = BigDiff.find_subtraction_stars(star_list)
-
         return master, star_list  # kernel_stars
 
     @staticmethod
@@ -145,29 +143,43 @@ class Master:
             chk_tmp_files = Utils.get_file_list(Configuration.MASTER_TMP_DIRECTORY, Configuration.FILE_EXTENSION)
 
             # get the image list
-            image_list, dates = Utils.get_all_files_per_field(Configuration.CLEAN_DIRECTORY,
+            full_image_list, dates = Utils.get_all_files_per_field(Configuration.CLEAN_DIRECTORY,
                                                               Configuration.FIELD,
                                                               'clean')
             # determine the number of loops we need to move through for each image
-            nfiles = len(image_list)
+            full_nfiles = len(full_image_list)
+
+            # get the nights the images were observed
+            img_by_night = np.array([line.split('/')[7] for line in full_image_list]).reshape(-1)
 
             # loop through the image headers and get the sky background
-            sky_values = np.zeros(nfiles)
-            for idx, file in enumerate(image_list):
-                sky_values[idx] = fits.getheader(file)['sky']
+            sky_values = np.zeros(full_nfiles)
+            bd_wcs = np.zeros(full_nfiles)
+            for idx, file in enumerate(full_image_list):
+
+                # pull in the header file
+                h_chk = fits.getheader(file)
+
+                # get the sky background
+                sky_values[idx] = h_chk['sky']
+
+                # update the bad index if it exists
+                if h_chk['BAD_WCS'] == 'Y':
+                        bd_wcs[idx] = 1
+                else:
+                    bd_wcs[idx] = 0
 
             # get the statistics on the images
             img_mn, img_mdn, img_std = sigma_clipped_stats(sky_values, sigma=2)
-            gd_idx = np.argwhere(sky_values <= img_mdn + 2 * img_std)  # get the index values where the background is low
 
-            # update the image list to only include the "good" files
-            image_list = np.array(image_list)[gd_idx].reshape(-1).tolist()
+            # now make a list of the images to use for the master frame
+            image_list = []
+            for idx, file in enumerate(full_image_list):
 
-            # remove bad dates by eye
-            img_by_night = np.array([line.split('/')[7] for line in image_list]).reshape(-1)
-            gd_idx = np.argwhere(img_by_night != '2024-10-03')
+                # remove nights which have high sky background, bad wcs, or are on hand-picked bad nights
+                if (sky_values[idx] <= img_mdn + 2 * img_std) & (bd_wcs[idx] == 0) & (img_by_night[idx] != '2024-10-03'):
+                    image_list.append(file)
 
-            image_list = np.array(image_list)[gd_idx].reshape(-1).tolist()
             nfiles = len(image_list)
 
             if len(chk_tmp_files) == 0:
@@ -240,15 +252,15 @@ class Master:
                         cnt_img = cnt_img + 1
                         # increase the iteration
                         idx_cnt += 1
-                # median the data into a single file
-                hold_data[kk] = np.median(block_hold, axis=0)
-                del block_hold
-                if kk < 10:
-                    fits.writeto(Configuration.MASTER_TMP_DIRECTORY + "0" + str(kk) + "_tmp_master.fits",
-                                 hold_data[kk], master_header, overwrite=True)
-                else:
-                    fits.writeto(Configuration.MASTER_TMP_DIRECTORY + str(kk) + "_tmp_master.fits",
-                                 hold_data[kk], master_header, overwrite=True)
+                    # median the data into a single file
+                    hold_data[kk] = np.median(block_hold, axis=0)
+                    del block_hold
+                    if kk < 10:
+                        fits.writeto(Configuration.MASTER_TMP_DIRECTORY + "0" + str(kk) + "_tmp_master.fits",
+                                     hold_data[kk], master_header, overwrite=True)
+                    else:
+                        fits.writeto(Configuration.MASTER_TMP_DIRECTORY + str(kk) + "_tmp_master.fits",
+                                     hold_data[kk], master_header, overwrite=True)
             else:
                 Utils.log("Legacy files found. Creating Master frame from these files. "
                           "Delete if you do not want this!", "info")
@@ -261,18 +273,18 @@ class Master:
                     hold_data[kk] = master_tmp
                     master_header = master_tmp_head
 
-
             # median the mini-images into one large image
             master = np.median(hold_data, axis=0)
 
             master_header['MAST_COMB'] = 'median'
             master_header['NUM_MAST'] = nfiles
 
-            # now mask the bad parts of the image
+            # now mask the bad parts of the image #### THIS WILL CHANGE PER FIELD!!!! LIKELY YOU SHOULD REMOVE#####
             master[0:490, :] = 0
             master[10045:-1, :] = 0
             master[:, 0:530] = 0
             master[:, 10465:-1] = 0
+            #### END LIKELY REMOVE
 
             # write the image out to the master directory
             fits.writeto(Configuration.MASTER_DIRECTORY + file_name,

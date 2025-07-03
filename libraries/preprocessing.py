@@ -1,13 +1,9 @@
 import pandas as pd
 from config import Configuration
 from libraries.utils import Utils
-import numpy as np
 import os
 import numpy as np
-import astropy.io.fits as pyfits
 import astropy.wcs as pywcs
-from astropy import coordinates
-from astropy import units as u
 import scipy.ndimage
 from astropy.io import fits
 from astropy import units as u
@@ -17,7 +13,9 @@ from photutils.detection import DAOStarFinder
 from astropy.stats import SigmaClip
 from photutils.background import Background2D, MedianBackground
 from astropy.stats import sigma_clipped_stats
-import astroalign as aa
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
 
 class Preprocessing:
 
@@ -355,14 +353,14 @@ class Preprocessing:
         all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:30]
 
         # get the stars in the image
-        # xy = twirl.find_peaks(img)[0:30]
         mean, median, std = sigma_clipped_stats(img, sigma=3.0)
         daofind = DAOStarFinder(fwhm=3.0, threshold=100)
         sources = daofind(img - median)
 
         # sort based on "real" stars and only select the top 50 or so
         sources = sources[(sources['flux'] > 0) &
-                          (sources['xcentroid'] > 2500) & (sources['ycentroid'] > 2500)]
+                          (sources['xcentroid'] > 2500) &
+                          (sources['ycentroid'] > 2500)]
         sources.sort('flux', reverse=True)
         sources = sources[0:100]
 
@@ -385,8 +383,15 @@ class Preprocessing:
             # add the WCS to the header
             h = wcs.to_header()
 
+            # transfer the header information
             for idx, v in enumerate(h):
                  header[v] = (h[idx], h.comments[idx])
+
+            # in some cases twirl will fail, but still complete, mark this in the image header so we are aware
+            if header['PC1_1'] < -1:
+                header['BAD_WCS'] = 'Y'
+            else:
+                header['BAD_WCS'] = 'N'
 
         except:
             Utils.log("Bad image!", "info")
@@ -408,6 +413,7 @@ class Preprocessing:
         sigma_clip = SigmaClip(sigma=3)
         bkg_estimator = MedianBackground()
 
+        #### REMOVE THIS PART FOR NON-47TUC FIELDS!!!!
         # find the most likely position of the cluster
         daofind = DAOStarFinder(fwhm=3.0, threshold=50)
         sources = daofind(img[3000:, 3000:])
@@ -425,8 +431,9 @@ class Preprocessing:
         if ((x_cen - 5200) - 200 > 0) & ((x_cen - 5200) > 0):
             mask_img[int((y_cen - 500) - 200):int((y_cen - 500) + 200),
             int((x_cen - 5200) - 200):int((x_cen - 5200) + 200)] = 1 # Other GC
+        #### END REMOVAL FOR NON-47TUC FIELDS!!!!
 
-        # do the 2D background estimation
+        # do the 2D background estimation, if there is no mask, then remove mask_img
         bkg = Background2D(img, (Configuration.PIX, Configuration.PIX), filter_size=(3, 3),
                            sigma_clip=sigma_clip, bkg_estimator=bkg_estimator, mask=mask_img)
         sky = bkg.background
@@ -446,7 +453,8 @@ class Preprocessing:
                 mdn_slc = np.median(fin_img[y:y + y_skip, x])
                 mdn = np.median(fin_img[y:y + y_full, x])
 
-                # don't do a local subtraction if there is a bright object (like a GC)
+                # update the column with the new background, unless something chonky is thowing off the calculation
+                # like 47-Tuc or a galaxy etc
                 if mdn_slc < (mdn + 0.1 * mdn):
                     fin_img[y:y + y_skip, x] = (fin_img[y:y + y_skip, x] -
                                                 np.median(fin_img[y:y + y_skip, x]) +
@@ -463,9 +471,12 @@ class Preprocessing:
 
         # if desired, write out the sky background to the working directory
         if sky_write == 'Y':
-            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'sky_background' + Configuration.FILE_EXTENSION, sky, overwrite=True)
-            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'img' + Configuration.FILE_EXTENSION, img, overwrite=True)
-            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'img_sub' + Configuration.FILE_EXTENSION, fin_img, header=header, overwrite=True)
+            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'sky_background' + Configuration.FILE_EXTENSION,
+                         sky, overwrite=True)
+            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'img' + Configuration.FILE_EXTENSION,
+                         img, overwrite=True)
+            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'img_sub' + Configuration.FILE_EXTENSION,
+                         fin_img, header=header, overwrite=True)
 
         return fin_img, header
 
@@ -710,7 +721,7 @@ class Preprocessing:
         return file_name
 
     @staticmethod
-    def align_img(image, header1, header2, preserve_bad_pixels=True):
+    def align_img(image, header1, header2, preserve_bad_pixels=False):
         """
         This function is based on the FITS_tools utility hcongrid and it interpolates an image from one .fits header
         to another
@@ -721,7 +732,7 @@ class Preprocessing:
         :parameter preserve_bad_pixels - Try to set NAN pixels to NAN in the zoomed image.  Otherwise, bad
             pixels will be set to zero
 
-        :return newimage, header3 - The image which has been transformed and the header with the new coordinates
+        :return new_image - The image which has been transformed to the reference header
 
         """
 

@@ -47,7 +47,7 @@ class BigDiff:
             fin_nme = Preprocessing.mk_nme(files[ii], 'Y', 'N', 'N', 'N', 'N')
 
             if os.path.isfile(fin_nme) == 1:
-                Utils.log("File " + files[ii] + " found. Skipping...", "info")
+                Utils.log("File " + fin_nme + " found. Skipping...", "info")
 
             # check to see if the differenced file already exists
             if os.path.isfile(fin_nme) == 0:
@@ -135,6 +135,13 @@ class BigDiff:
         header['diffed'] = 'Y'
         header['nstars'] = nstars
 
+        # now mask the missing master frame parts #### THIS WILL CHANGE PER FIELD!!!! LIKELY YOU SHOULD REMOVE#####
+        dimg[0:490, :] = 0
+        dimg[10045:-1, :] = 0
+        dimg[:, 0:530] = 0
+        dimg[:, 10465:-1] = 0
+        #### END LIKELY REMOVE
+
         # update the image with the new file header
         fits.writeto('dimg.fits', dimg, header, overwrite=True)
 
@@ -168,8 +175,6 @@ class BigDiff:
         fits.writeto(Configuration.CODE_DIFFERENCE_DIRECTORY + 'ref.fits', master, master_header, overwrite=True)
 
         # prepare the text files
-        # write the parameter file now that we have the stars
-
         Utils.write_txt(Configuration.CODE_DIFFERENCE_DIRECTORY + 'ref.txt', 'w', "ref.fits")
         Utils.write_txt(Configuration.CODE_DIFFERENCE_DIRECTORY + 'img.txt', 'w', "img.fits")
 
@@ -183,14 +188,20 @@ class BigDiff:
         """
 
         Utils.log('Finding stars for kernel from the star list.', 'info')
-
         diff_list = star_list.copy().reset_index(drop=True)
+
+        ## REMOVE THIS PART FOR NON-47TUC FIELDS!!!!
+        # remove stars near 47 Tuc and the small cluster
+
         diff_list['bd_star'] = np.where((diff_list['xcen'] > 4300) & (diff_list['xcen'] < 9300) &
                                         (diff_list['ycen'] > 3600) & (diff_list['ycen'] < 8200), 1, 0)
         diff_list['bd_star'] = np.where((diff_list['xcen'] > 1200) & (diff_list['xcen'] < 1900) &
                                          (diff_list['ycen'] > 5100) & (diff_list['ycen'] < 5600), 2,
                                         diff_list['bd_star'])
+        diff_list = diff_list[diff_list.bd_star == 0].copy().reset_index(drop=True)
+        ## END REMOVAL FOR NON-47TUC FIELDS!!!!
 
+        # now check for stars based on their magnitude differences
         positions = np.transpose((diff_list['xcen'], diff_list['ycen']))
 
         aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
@@ -215,19 +226,16 @@ class BigDiff:
         dmag_minus = dmd - dsg
 
         # now clip the stars to begin the subtraction
-        diff_list = diff_list[(diff_list['dmag'] < dmag_plus) & (diff_list['dmag'] > dmag_minus) &
-                              (diff_list['bd_star'] == 0) & (diff_list['master_mag'] < 13)].copy().reset_index(drop=True)
+        diff_list = diff_list[(diff_list['dmag'] < dmag_plus) &
+                              (diff_list['dmag'] > dmag_minus)].copy().reset_index(drop=True)
 
+        # now check for non-crowded stars
+        diff_list['prox'] = diff_list.apply(lambda x: np.sort(np.sqrt((x.xcen - diff_list.xcen) ** 2 +
+                                                                        (x.ycen - diff_list.ycen) ** 2))[1], axis=1)
+        diff_list = diff_list[diff_list.prox > (2 * Configuration.STMP + 1)].copy().reset_index(drop=True)
 
-        # clip likely blends (large changes from gaia
-        diff_list['gmag'] = diff_list['master_mag'].to_numpy() - diff_list['phot_g_mean_mag'].to_numpy()
-        gmn, gmd, gsg = sigma_clipped_stats(diff_list.gmag, sigma=2)
-        gmag_plus = gmd + gsg
-        gmag_minus = gmd - gsg
-
-        # now clip the stars to begin the subtraction
-        diff_list = diff_list[(diff_list['gmag'] < gmag_plus) &
-                               (diff_list['gmag'] > gmag_minus)].copy().reset_index(drop=True)
+        # make a magnitude cut
+        diff_list = diff_list[diff_list.master_mag > 10].copy().reset_index(drop=True)
 
         if len(diff_list) > Configuration.NRSTARS:
             diff_list = diff_list.sample(n=Configuration.NRSTARS)
@@ -235,14 +243,15 @@ class BigDiff:
         else:
             nstars = len(diff_list)
             Utils.log("There are not enough stars on the frame to use " + str(Configuration.NRSTARS) +
-                      " in the subtraction. Using all available stars which is " + str(nstars) + " stars.",
+                      " in the subtraction. Instead, all available stars (" +
+                      str(nstars) + ") will be used in the subtraction.",
                       "info")
-
 
         # add 1 for indexing in C vs indexing in python
         diff_list['x'] = np.around(diff_list['xcen'] + 1, decimals=0)
         diff_list['y'] = np.around(diff_list['ycen'] + 1, decimals=0)
 
+        # write the parameter file for the C code to use
         Utils.write_txt(Configuration.CODE_DIFFERENCE_DIRECTORY + 'parms.txt', 'w', "%1d %1d %1d %4d\n" %
                         (Configuration.STMP, Configuration.KRNL, Configuration.ORDR, nstars))
 
