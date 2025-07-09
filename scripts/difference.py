@@ -6,13 +6,22 @@ import os
 import numpy as np
 from astropy.io import fits
 from photutils.aperture import CircularAperture
-from photutils.aperture import CircularAnnulus
 from photutils.aperture import aperture_photometry
 from astropy.stats import sigma_clipped_stats
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('TkAgg')
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=Warning)
+import matplotlib
+import logging
+matplotlib.set_loglevel(level = 'warning')
+matplotlib.use("TkAgg")
+pil_logger = logging.getLogger('PIL')
+pil_logger.setLevel(logging.INFO)
+
 
 class BigDiff:
 
@@ -78,6 +87,7 @@ class BigDiff:
         # write the new image file
         img_sbkg = org_img - org_header['SKY']
         img_align = Preprocessing.align_img(img_sbkg, org_header, master_header)
+
         org_header['WCSAXES'] = master_header['WCSAXES']
         org_header['CRPIX1'] = master_header['CRPIX1']
         org_header['CRPIX2'] = master_header['CRPIX2']
@@ -100,7 +110,7 @@ class BigDiff:
         org_header['ALIGNED'] = 'Y'
 
         fits.writeto(Configuration.CODE_DIFFERENCE_DIRECTORY + 'img.fits',
-                     img_align, org_header, overwrite=True)
+                       img_align, org_header, overwrite=True)
 
         # get the kernel stars for the subtraction
         nstars = BigDiff.find_subtraction_stars_img(img_align, star_list)
@@ -204,39 +214,35 @@ class BigDiff:
 
         # now check for stars based on their magnitude differences
         positions = np.transpose((diff_list['xcen'], diff_list['ycen']))
-
         aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
-        aperture_annulus = CircularAnnulus(positions,
-                                           r_in=Configuration.ANNULI_INNER,
-                                           r_out=Configuration.ANNULI_OUTER)
-        apers = [aperture, aperture_annulus]
 
         # run the photometry to get the data table
-        phot_table = aperture_photometry(img, apers, method='exact')
+        phot_table = aperture_photometry(img, aperture, method='exact')
 
         # the global background was subtracted, and teh master mangitude does not have exposure time corrected
-        flux = np.array(phot_table['aperture_sum_0'])
+        flux = np.array(phot_table['aperture_sum']) * Configuration.GAIN
 
         # convert to magnitude
         mag = 25 - 2.5 * np.log10(flux)
 
-        # clip likely variables (large changes from master frame)
+        # clip likely variables, these objects have large magnitudes changes relative to the master frame
         diff_list['dmag'] = diff_list['master_mag'].to_numpy() - mag
+
+        # the clip will be 2 sigma-clipping above and below the mean offset
         dmn, dmd, dsg = sigma_clipped_stats(diff_list.dmag, sigma=2)
         dmag_plus = dmd + dsg
         dmag_minus = dmd - dsg
-
-        # now clip the stars to begin the subtraction
         diff_list = diff_list[(diff_list['dmag'] < dmag_plus) &
-                              (diff_list['dmag'] > dmag_minus)].copy().reset_index(drop=True)
+                                 (diff_list['dmag'] > dmag_minus)].copy().reset_index(drop=True)
 
         # now check for non-crowded stars
         diff_list['prox'] = diff_list.apply(lambda x: np.sort(np.sqrt((x.xcen - diff_list.xcen) ** 2 +
-                                                                        (x.ycen - diff_list.ycen) ** 2))[1], axis=1)
+                                                                          (x.ycen - diff_list.ycen) ** 2))[1], axis=1)
         diff_list = diff_list[diff_list.prox > (2 * Configuration.STMP + 1)].copy().reset_index(drop=True)
 
         # make a magnitude cut
-        diff_list = diff_list[diff_list.master_mag > 10].copy().reset_index(drop=True)
+        diff_list = diff_list[(diff_list.phot_g_mean_mag < 15) &
+                              (diff_list.master_mag > 10)].copy().reset_index(drop=True)
 
         if len(diff_list) > Configuration.NRSTARS:
             diff_list = diff_list.sample(n=Configuration.NRSTARS)

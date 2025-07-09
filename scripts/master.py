@@ -4,20 +4,12 @@ from libraries.preprocessing import Preprocessing
 import numpy as np
 import os
 from astropy.io import fits
-from photutils.aperture import CircularAperture
-from photutils.aperture import CircularAnnulus
-from photutils.aperture import aperture_photometry
 from photutils.centroids import centroid_sources
 import pandas as pd
-import warnings
 from astroquery.mast import Catalogs
 from astropy.wcs import WCS
-warnings.filterwarnings("ignore", category=RuntimeWarning)
-warnings.filterwarnings("ignore", category=Warning)
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 from astropy.stats import sigma_clipped_stats
+from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 
 
 class Master:
@@ -92,40 +84,55 @@ class Master:
             # run aperture photometry
             # set up the star aperture and sky annuli
             aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
+            aperture_area = aperture.area  # the area of the aperture
             annulus_aperture = CircularAnnulus(positions, r_in=Configuration.ANNULI_INNER,
                                                r_out=Configuration.ANNULI_OUTER)
-            apers = [aperture, annulus_aperture]
+
+            # get the background stats
+            aperstats = ApertureStats(master, annulus_aperture)
+            bkg_mean = aperstats.mean
+            total_bkg = bkg_mean * aperture_area
 
             # run the photometry to get the data table
-            phot_table = aperture_photometry(master, apers, method='exact')
+            phot_table = aperture_photometry(master, aperture, method='exact')
 
-            # extract the sky background for each annuli based on either a global or local subtraction
-            sky = phot_table['aperture_sum_1'] / annulus_aperture.area
-
-            # subtract the sky background to get the stellar flux and square root of total flux to get the error
-            flux = np.array(phot_table['aperture_sum_0'])
+            # extract the flux from the table
+            # the sky was subtracted during the calibration and differencing steps, the raw photometry should be fine
+            star_flux = np.array(phot_table['aperture_sum']) * Configuration.GAIN
 
             # calculate the expected photometric error
-            flux_er = np.sqrt((phot_table['aperture_sum_0']))
+            star_error = star_flux
+            bkg_error = master_header['SKY'] * aperture_area * Configuration.GAIN
+
+            # combine sky and signal error in quadrature
+            star_flux_err = np.sqrt(star_error + bkg_error)
 
             # convert to magnitude
-            mag = 25. - 2.5 * np.log10(flux)
-            mag_er = (np.log(10.) / 2.5) * (flux_er / flux)
+            mag = 25. - 2.5 * np.log10(star_flux)
+            mag_er = (np.log(10.) / 2.5) * (star_flux_err / star_flux)
 
             # initialize the light curve data frame
             star_list['master_mag'] = mag
             star_list['master_mag_er'] = mag_er
-            star_list['master_flux'] = flux
-            star_list['master_flux_er'] = flux_er
-            star_list['sky'] = sky
+            star_list['master_flux'] = star_flux
+            star_list['master_flux_er'] = star_flux_err
+            star_list['master_sky'] = total_bkg
+
+            # only keep stars with reasonable photometry in the master list
             star_list = star_list[star_list['master_flux'] > 0]
-            star_list = star_list.sort_values(by='master_mag').reset_index()
+
+            # index is reset twice to make sure the star ID matches the brightness on the master frame
+            star_list = star_list.sort_values(by='master_mag').reset_index(drop=True).reset_index()
             star_list = star_list.rename(columns={'index': 'star_id'})
 
-            star_list.to_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt', sep=' ', index=False)
+            star_list.to_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                             sep=' ',
+                             index=False)
 
         else:
-            star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt', delimiter=' ', header=0)
+            star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                                    delimiter=' ',
+                                    header=0)
 
         return star_list
 
@@ -163,12 +170,6 @@ class Master:
 
                 # get the sky background
                 sky_values[idx] = h_chk['sky']
-
-                # update the bad index if it exists
-                if h_chk['BAD_WCS'] == 'Y':
-                        bd_wcs[idx] = 1
-                else:
-                    bd_wcs[idx] = 0
 
             # get the statistics on the images
             img_mn, img_mdn, img_std = sigma_clipped_stats(sky_values, sigma=2)
@@ -235,33 +236,34 @@ class Master:
                         master_tmp, master_tmp_head = fits.getdata(image_list[jj], header=True)
 
                         if (kk == 0) & (jj == 0):
-                            block_hold[idx_cnt] = master_tmp - master_tmp_head['sky']
-                            master_header = master_tmp_head
-                            del master_tmp
-                            Utils.log("Mini file " + str(kk) + " image " + str(jj) +
-                                      " aligned. " + str(nfiles - cnt_img) + " remain.",
-                                      "info")
+                             block_hold[idx_cnt] = master_tmp - master_tmp_head['sky']
+                             master_header = master_tmp_head
+                             del master_tmp
+                             Utils.log("Mini file " + str(kk) + " image " + str(jj) +
+                                       " aligned. " + str(nfiles - cnt_img) + " remain.",
+                                       "info")
                         else:
-                            tmp = Preprocessing.align_img(master_tmp, master_tmp_head, master_header)
-                            Utils.log("Mini file " + str(kk) + " image " + str(jj) +
-                                      " aligned. " + str(nfiles - cnt_img) + " remain.",
-                                      "info")
-                            block_hold[idx_cnt] = tmp - master_tmp_head['sky']
-                            del tmp
-                            del master_tmp
+                             tmp = Preprocessing.align_img(master_tmp, master_tmp_head, master_header)
+                             Utils.log("Mini file " + str(kk) + " image " + str(jj) +
+                                       " aligned. " + str(nfiles - cnt_img) + " remain.",
+                                       "info")
+                             block_hold[idx_cnt] = tmp - master_tmp_head['sky']
+                             del tmp
+                             del master_tmp
 
                         cnt_img = cnt_img + 1
                         # increase the iteration
                         idx_cnt += 1
+
                     # median the data into a single file
                     hold_data[kk] = np.median(block_hold, axis=0)
                     del block_hold
                     if kk < 10:
                         fits.writeto(Configuration.MASTER_TMP_DIRECTORY + "0" + str(kk) + "_tmp_master.fits",
-                                     hold_data[kk], master_header, overwrite=True)
+                                     hold_data[kk], master_tmp_head, overwrite=True)
                     else:
                         fits.writeto(Configuration.MASTER_TMP_DIRECTORY + str(kk) + "_tmp_master.fits",
-                                     hold_data[kk], master_header, overwrite=True)
+                                     hold_data[kk], master_tmp_head, overwrite=True)
             else:
                 Utils.log("Legacy files found. Creating Master frame from these files. "
                           "Delete if you do not want this!", "info")
