@@ -110,7 +110,7 @@ class Utils:
         dte_dir = []
         for f in sub_dir:
             if step == 'raw':
-                z = path + f + "/"
+                z = path + f + "/" + field + "/" 
             else:
                 z = path + f + "/" + field + "/"
             try:
@@ -124,9 +124,8 @@ class Utils:
 
         # get the unique dates with images
         for file in files_no_ext:
-            dte_dir.append(file.split('/')[-2])
+            dte_dir.append(file.split('/')[-3])
         uni_dte_dir = np.unique(dte_dir).tolist()
-
         return  files_no_ext, uni_dte_dir
 
     @staticmethod

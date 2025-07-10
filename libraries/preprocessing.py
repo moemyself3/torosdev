@@ -653,7 +653,7 @@ class Preprocessing:
         if difference_image == 'N':
             # first replace the "raw" directory with the "clean" directory
             file_hld = file_name.split('/')
-            file = Configuration.CLEAN_DIRECTORY + file_hld[-2] + "/" + Configuration.FIELD + "/" + file_hld[-1]
+            file = Configuration.CLEAN_DIRECTORY + file_hld[-3] + "/" + Configuration.FIELD + "/" + file_hld[-1]
             nme_hld = file.split('.fits')
 
             # update the name to be appropriate for what was done to the file
