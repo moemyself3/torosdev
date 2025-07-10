@@ -625,16 +625,16 @@ class Preprocessing:
         return flat_div, header
 
     @staticmethod
-    def mk_nme(file, difference_image='N', image_clip='N', sky_subtract='N', bias_subtract='N',
-               flat_divide='N',  dark_subtract="N", plate_solve='N'):
+    def mk_nme(file, difference_image='N', bias_subtract='N', dark_subtract="N", flat_divide='N',
+               image_clip='N', sky_subtract='N',  plate_solve='N'):
         """ This function will create the appropriate name for the file based on while steps are taken.
         :parameter file - The string with the file name
-        :parameter image_clip - Y/N if the image was clipped
-        :parameter bias_subtract - Y/N if a bias is subtracted
-        :parameter flat_divide - Y/N if a flat field is divided
-        :parameter dark_subtract - Y/N if the image was dark subtracted
-        :parameter sky_subtract - Y/N if sky subtraction was taken
         :parameter difference_image - Y/N if image subtraction occurred
+        :parameter bias_subtract - Y/N if a bias is subtracted
+        :parameter dark_subtract - Y/N if the image was dark subtracted
+        :parameter flat_divide - Y/N if a flat field is divided
+        :parameter image_clip - Y/N if the image was clipped
+        :parameter sky_subtract - Y/N if sky subtraction was taken
         :parameter plate_solve - Y/N if the plate solving occurred
 
         :return file_name - A string with the new file name
@@ -710,7 +710,7 @@ class Preprocessing:
             # bias and flat and image clip
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'N')\
                     and (dark_subtract == 'N') and (image_clip =='Y'):
-                file_name =  nme_hld[0]  + '_bcf' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bfc' + Configuration.FILE_EXTENSION
 
             # bias and flat and sky and dark
             if (bias_subtract == 'Y') and (flat_divide == 'Y')and (sky_subtract == 'Y')\
@@ -719,12 +719,12 @@ class Preprocessing:
             # bias and flat and sky and clip
             if (bias_subtract == 'Y') and (flat_divide == 'Y')and (sky_subtract == 'Y')\
                     and (dark_subtract == 'N') and (image_clip =='Y'):
-                file_name =  nme_hld[0]  + '_bcfs' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bfcs' + Configuration.FILE_EXTENSION
 
             # bias and flat and dark and sky and clip
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\
                     and (dark_subtract == 'Y') and (image_clip =='Y'):
-                file_name =  nme_hld[0]  + '_bkcfs' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bkfcs' + Configuration.FILE_EXTENSION
 
             # bias and flat and dark and sky and clip and plate_solve
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\

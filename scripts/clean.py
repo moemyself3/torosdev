@@ -13,16 +13,9 @@ import numpy as np
 class Clean:
 
     @staticmethod
-    def clean_images(image_clip='N', bias_subtract="N", dark_subtract="N",
-                     flat_divide='N', sky_subtract="N", plate_solve='N'):
+    def clean_images():
         """ This is the main function script to clean multiple images, alternatively clean_img can be used to clean
         a single image.
-        :parameter image_clip - Y/N if you want to clip any excess from the images (default = N)
-        :parameter bias_subtract - Y/N if you want to subtract the bias from the images (default = N)
-        :parameter dark_subtract -Y/N if you want to subtract a dark frame from the science images (default = N)
-        :parameter flat_divide - Y/N if you want to flatten the images (default = N)
-        :parameter sky_subtract - Y/N if you want to subtract the sky from the images (default = N)
-        :parameter plate_solve -Y/N if you want to plate_solve the image (default = N)
 
         return no value is returned, the values images from in_path are cleaned and deposited in out_path
         """
@@ -35,7 +28,7 @@ class Clean:
                                                          'raw',
                                                          Configuration.FILE_EXTENSION)
 
-        # make the output directories (clean and diff)
+        # make the output directories for the clean, difference, and flux files
         output_dirs = []
 
         for dte in date_dirs:
@@ -43,6 +36,8 @@ class Clean:
             output_dirs.append(Configuration.DATA_DIRECTORY + "clean/" + dte + "/" + Configuration.FIELD)
             output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte)
             output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte + "/" + Configuration.FIELD)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "flux/" + dte)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "flux/" + dte + "/" + Configuration.FIELD)
 
         Utils.create_directories(output_dirs)
         # break if there are no files
@@ -55,9 +50,14 @@ class Clean:
         for idx, file in enumerate(files):
 
             # make a new name for the file based on which actions are taken
-            file_name = Preprocessing.mk_nme(file, 'N',
-                                             image_clip, sky_subtract, bias_subtract,
-                                             flat_divide, dark_subtract, plate_solve)
+            file_name = Preprocessing.mk_nme(file,
+                                             'N',
+                                             Configuration.SUBTRACT_BIAS,
+                                             Configuration.SUBTRACT_DARK,
+                                             Configuration.DIVIDE_FLAT,
+                                             Configuration.CLIP_IMAGE,
+                                             Configuration.SUBTRACT_SKY,
+                                             Configuration.PLATE_SOLVE)
 
             # only create the files that don't exist
             if os.path.isfile(file_name) == 1:
@@ -68,9 +68,7 @@ class Clean:
             if os.path.isfile(file_name) == 0:
 
                 # clean the image
-                clean_img, header, bd_flag = Clean.clean_img(file, image_clip,
-                                                             bias_subtract, dark_subtract,
-                                                             flat_divide, sky_subtract, plate_solve)
+                clean_img, header, bd_flag = Clean.clean_img(file)
 
                 # write out the file
                 if bd_flag == 0:
@@ -88,19 +86,12 @@ class Clean:
         Utils.log("Imaging cleaning complete in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
 
     @staticmethod
-    def clean_img(file, image_clip='Y', bias_subtract='N', dark_subtract="N",
-                  flat_divide='N', sky_subtract="N", plate_solve="N"):
+    def clean_img(file):
 
         """ This function is the primary script to clean the image, various other functions found in this class
         can be found in the various libraries imported.
 
         :parameter  file - The file name of the image you would like to clean
-        :parameter image_clip - Y/N if you want to clip the image (default = Y)
-        :parameter sky_subtract - Y/N if you want to subtract the sky from the image (default = Y)
-        :parameter bias_subtract - Y/N if you want to remove a bias frame (default = N)
-        :parameter flat_divide - Y/N if you want to flatten the image (default = N)
-        :parameter dark_subtract -Y/N if you want to subtract the dark frame (default = N)
-        :parameter plate_solve -Y/N if you want to plate solve the image (default = N)
 
         """
 
@@ -110,7 +101,7 @@ class Clean:
         img, header = fits.getdata(file, header=True)
 
         # remove bias and dark as necessary
-        if (bias_subtract == 'Y') & (dark_subtract == 'Y'):
+        if (Configuration.SUBTRACT_BIAS == 'Y') & (Configuration.SUBTRACT_DARK == 'Y'):
             st = time.time()
             bias, dark = Preprocessing.mk_combined_bias_and_dark(image_overwrite='N')
             img, header = Preprocessing.subtract_scaled_bias_dark(img, header)
@@ -120,7 +111,7 @@ class Clean:
             Utils.log("Skipping bias and darks subtraction...", "info")
 
         # flat divide if necessary
-        if flat_divide == 'Y':
+        if Configuration.DIVIDE_FLAT == 'Y':
             st = time.time()
             flat = Preprocessing.mk_flat(5, 300)
             img, header = Preprocessing.flat_divide(img, header)
@@ -129,7 +120,7 @@ class Clean:
         else:
             Utils.log("Skipping image flattening....", "info")
 
-        if image_clip == 'Y':
+        if Configuration.CLIP_IMAGE == 'Y':
             st = time.time()
             img, header = Preprocessing.clip_image(img, header)
             fn = time.time()
@@ -138,7 +129,7 @@ class Clean:
             Utils.log("Skipping over scan removal...", "info")
 
         # sky subtract if necessary
-        if sky_subtract == 'Y':
+        if Configuration.SUBTRACT_SKY == 'Y':
             st = time.time()
             Utils.log("A background box of " + str(Configuration.PIX) + " x " + str(Configuration.PIX) +
                       " will be used for background subtraction.", "info")
@@ -150,7 +141,7 @@ class Clean:
         else:
             Utils.log("Skipping sky subtraction...", "info")
 
-        if plate_solve == 'Y':
+        if Configuration.PLATE_SOLVE == 'Y':
             st = time.time()
             Utils.log("Now plate solving and correcting the header.", "info")
             img, header = Preprocessing.correct_header(img, header)

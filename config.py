@@ -1,4 +1,4 @@
-""" This serves as the configuration file for the ETSI pipeline. """
+""" This serves as the configuration file for the TOROS pipeline. """
 
 
 class Configuration:
@@ -27,6 +27,14 @@ class Configuration:
     PHOTOMETRY_SKIP = 'Y'
     LIGHTCURVE_SKIP = 'Y'
 
+    # how do you want to clean the image?
+    SUBTRACT_BIAS = "Y"
+    SUBTRACT_DARK = "Y"
+    DIVIDE_FLAT = "Y"
+    CLIP_IMAGE = "Y"
+    SUBTRACT_SKY = "Y"
+    PLATE_SOLVE = "Y"
+
     # telescope information
     PIXEL_SIZE = 0.4959  #  0.47  # arcsec per pixel
     NUM_PIXELS = 10560  # pixels per side
@@ -46,8 +54,8 @@ class Configuration:
     # update the differencing information, primarily the number of stars to use, and the kernel size
     KRNL = 2  # kernel size 2 * KNRL + 1
     STMP = 10  # stamp size ot use 2 * STMP + 1
-    ORDR = 0  # order of the kernel to use, 0 is stationary, 1 or 2 is spatially varying
-    NRSTARS = 4000  # number of stars used to solve for kernel
+    ORDR = 1  # order of the kernel to use, 0 is stationary, 1 or 2 is spatially varying
+    NRSTARS = 500  # number of stars used to solve for kernel
     BRIGHT_STARS = 20000  # the top stars to search for in kernel stars
     KERNEL_LIMIT = 0.5  # the maximum allowable offset in zeropoint in magnitudes
     AXS_LIMIT = 100  # the number of pixel close to the edge of the frame to use
@@ -89,13 +97,15 @@ class Configuration:
     FLAT_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_flat/"
     DARK_DIRECTORY = CALIBRATION_DIRECTORY + "tmp_dark/"
     LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc/"
+    LIGHTCURVE_FIELD_DIRECTORY = LIGHTCURVE_DIRECTORY + FIELD + "/"
     DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
+    FLUX_DIRECTORY = DATA_DIRECTORY + "flux/"
 
     # directory_list
-    DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY,
+    DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY, FLUX_DIRECTORY,
                    QUERIES_DIRECTORY, CLEAN_DIRECTORY, MASTER_MAIN_DIRECTORY, MASTER_DIRECTORY, MASTER_TMP_DIRECTORY,
                    LIGHTCURVE_DIRECTORY, CENTROID_DIRECTORY, RAW_DIRECTORY, BIAS_DIRECTORY, DARK_DIRECTORY,
-                   FLAT_DIRECTORY, DIFFERENCED_DIRECTORY, CODE_DIFFERENCE_DIRECTORY]
+                   FLAT_DIRECTORY, DIFFERENCED_DIRECTORY, CODE_DIFFERENCE_DIRECTORY, LIGHTCURVE_FIELD_DIRECTORY]
 
     # BROKER CONFIGURATION SPECIFICS
     LISTEN_NED_WAIT = 1

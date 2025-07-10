@@ -4,6 +4,7 @@ from config import Configuration
 import logging
 import os
 from datetime import datetime
+import numpy as np
 
 
 class Utils:
@@ -118,11 +119,15 @@ class Utils:
                             (x.split('_')[0] == field)):
                         if x.endswith(file_ext):
                             files_no_ext.append(z + x)
-                dte_dir.append(f)
             except:
                 Utils.log("Field " + field + " not observed on " + f, "info")
 
-        return  files_no_ext, dte_dir
+        # get the unique dates with images
+        for file in files_no_ext:
+            dte_dir.append(file.split('/')[-2])
+        uni_dte_dir = np.unique(dte_dir).tolist()
+
+        return  files_no_ext, uni_dte_dir
 
     @staticmethod
     def get_all_files_per_date(path, file_ext):

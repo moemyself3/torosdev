@@ -10,8 +10,7 @@ Utils.create_directories(Configuration.DIRECTORIES)
 
 # do the necessary preprocessing of the images
 if Configuration.CLEAN_SKIP == 'N':
-    Clean.clean_images(image_clip='Y', bias_subtract='Y', dark_subtract='Y',
-                       flat_divide='Y', sky_subtract='Y', plate_solve='Y')
+    Clean.clean_images()
 else:
     Utils.log("Skipping image cleaning.", "info")
 
@@ -31,7 +30,7 @@ else:
     Utils.log("Skipping photometry.", "info")
 
 if Configuration.LIGHTCURVE_SKIP == 'N':
-    Lightcurves.mk_raw_lightcurves(star_list)
+    Lightcurves.mk_raw_lightcurves()
 else:
     Utils.log("Skipping making raw light curves.", "info")
 Utils.log("All done! See ya later, alligator.", "info")

@@ -28,7 +28,8 @@ class Lightcurves:
         """
 
         # pull in the star list for the photometry
-        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt', delimiter=' ',
+        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
+                                delimiter=' ',
                                 header=0)
 
         # get the image list to difference
@@ -41,6 +42,7 @@ class Lightcurves:
         for idx, file in enumerate(files):
 
             fin_nme = file.split('.fits')[0] + '.flux'
+            fin_nme = fin_nme.replace('/diff/', '/flux/')
 
             if os.path.isfile(fin_nme) == 1:
                 Utils.log("Flux file " + fin_nme + " found. Skipping...", "info")
@@ -56,15 +58,13 @@ class Lightcurves:
         Utils.log("Differencing complete for " + Configuration.FIELD + ".", "info")
 
     @staticmethod
-    def mk_raw_lightcurves(star_list):
+    def mk_raw_lightcurves():
         """ This function will create the individual raw light curve files for each star in the specific star list
-
-        :parameter flux_dir - A data frame with the master frame flux data
 
         :return nothing is returned, but each light curve is output
         """
 
         # combine the flux from the flux files, and write the raw light curves
-        Photometry.combine_flux_files(star_list)
+        Photometry.combine_flux_files()
 
         return
