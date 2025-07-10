@@ -4,27 +4,27 @@
 class Configuration:
 
     # Computer for reduction
-    MACHINE = 'mac_studio'
+    MACHINE = 'm1'
     RAW_FILE_EXTENSION = '.fits'
     FILE_EXTENSION = '.fits'
 
     # update for different data products
-    FIELD = 'FIELD_0e.001'
-    RA = 6.0223292
-    DEC = -72.0814444
+    FIELD = 'FIELD_2b.022'
+    RA = 52.759
+    DEC = -35.611
 
     # is there a transient you want the light curve for?
-    TRANSIENT_LC = 'Y'
+    TRANSIENT_LC = 'N'
     TRANSIENT_NAME = 'AT2024xsq' # 'AT2024xhm'  # 'AT2024ykx' #
     TRANSIENT_RA = 10.1958012 # 46.9968525  # 307.422951333 #
     TRANSIENT_DEC = -21.9258309  # -38.93038375  # -30.269894 #
 
     # steps to skip
-    CLEAN_SKIP = 'Y'
-    WRITE_SKY = 'N'
+    CLEAN_SKIP = 'N'
+    WRITE_SKY = 'Y'
     MASTER_SKIP = 'Y'
     DIFFERENCE_SKIP = 'Y'
-    PHOTOMETRY_SKIP = 'N'
+    PHOTOMETRY_SKIP = 'Y'
     LIGHTCURVE_SKIP = 'Y'
 
     # telescope information
@@ -69,7 +69,7 @@ class Configuration:
     ANNULI_OUTER = APER_SIZE + 4
 
     # output paths for logging, temporary files, figures etc
-    WORKING_DIRECTORY = "/Users/yuw816/Development/toros/"
+    WORKING_DIRECTORY = "/Users/mcast/Research/toros/ryan/working_directory/"
     ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts/'
     ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis/'
     LOG_DIRECTORY = WORKING_DIRECTORY + 'logs/'
@@ -77,8 +77,8 @@ class Configuration:
     CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference/'
 
     # input paths for data etc
-    DATA_DIRECTORY = "/Users/yuw816/Data/toros/commissioning/"
-    RAW_DIRECTORY = "/Users/yuw816/OneDrive - The University of Texas-Rio Grande Valley/TOROS/"
+    DATA_DIRECTORY = "/Volumes/datadrive/coldharbor/"
+    RAW_DIRECTORY = "/Volumes/datadrive/coldharbor/raw/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
     MASTER_MAIN_DIRECTORY = DATA_DIRECTORY + "master/"
     MASTER_DIRECTORY = DATA_DIRECTORY + "master/" + FIELD + "/"

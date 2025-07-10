@@ -13,9 +13,9 @@ from photutils.detection import DAOStarFinder
 from astropy.stats import SigmaClip
 from photutils.background import Background2D, MedianBackground
 from astropy.stats import sigma_clipped_stats
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
+#import matplotlib
+#matplotlib.use('TkAgg')
+#import matplotlib.pyplot as plt
 
 class Preprocessing:
 
@@ -52,12 +52,13 @@ class Preprocessing:
             # make holders for the total number of nights
             bias_bulk = np.ndarray(shape=(ndates, Configuration.AXS_Y_RW, Configuration.AXS_X_RW))
             dark_bulk = np.ndarray(shape=(ndates, Configuration.AXS_Y_RW, Configuration.AXS_X_RW))
-
+            bias_bulk_filepath = []
+            dark_bulk_filepath = []
             zdx = 0
             for dte in bias_dates:
                 # determine how many bias and dark frames exist on this date
                 bias_frames = biases[biases.Date == dte]
-                bias_list = bias_frames.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.File, axis=1).to_list()
+                bias_list = bias_frames.apply(lambda x: Configuration.DATA_DIRECTORY + "bias/"  + x.Date + x.File, axis=1).to_list()
                 nbias = len(bias_frames)
 
                 dark_frames = darks[darks.Date == dte]
@@ -66,7 +67,7 @@ class Preprocessing:
                 # if dark frames exist, then move forward
                 if ndarks > 0:
                     Utils.log("Working to make mini bias and dark files for " + dte + '.', "info")
-                    dark_list = dark_frames.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.Files,
+                    dark_list = dark_frames.apply(lambda x: Configuration.DATA_DIRECTORY + "darks/" + x.Date + x.Files,
                                                   axis=1).to_list()
 
                     # generate the frame holder
@@ -81,8 +82,9 @@ class Preprocessing:
 
                         idx = idx + 1
                         total_bias = total_bias + 1
-                        del bias_tmp
+                        bias_tmp = None
                     bias_tmp_mdn = np.median(bias_hld, axis=0)
+                    bias_hld = None
                     Utils.log("Bias done.", "info")
 
                     jdx = 0
@@ -94,15 +96,13 @@ class Preprocessing:
                         dark_hld[jdx] = dark_tmp - bias_tmp_mdn
                         jdx = jdx + 1
                         total_dark = total_dark + 1
-                        del dark_tmp
+                        dark_tmp = None
                     dark_tmp_mdn = np.median(dark_hld, axis=0)
+                    dark_hld = None
                     # write the image out to the temporary directory
-                    if zdx < 10:
-                        fits.writeto(Configuration.DARK_DIRECTORY + '0' + str(zdx) + "_scale_tmp_dark.fits",
-                                     dark_tmp_mdn, overwrite=True)
-                    else:
-                        fits.writeto(Configuration.DARK_DIRECTORY + str(zdx) + "_scale_tmp_dark.fits",
-                                     dark_tmp_mdn, overwrite=True)
+                    dark_tmp_filename = Configuration.DARK_DIRECTORY + str(zdx).zfill(2) + "_scale_tmp_dark.fits"
+                    fits.writeto(dark_tmp_filename,
+                                 dark_tmp_mdn, overwrite=True)
                     Utils.log("Dark done.", "info")
 
                     # what are the sizes of the over scan?
@@ -125,20 +125,22 @@ class Preprocessing:
                             bias_tmp_mdn[y:y + full_chip_y, x:x + full_chip_x] = (
                                     bias_tmp_mdn[y:y + full_chip_y, x:x + full_chip_x] -
                                     np.median(bias_tmp_mdn[y:y + full_chip_y, x:x + full_chip_x]))
-
-                    if zdx < 10:
-                        fits.writeto(Configuration.BIAS_DIRECTORY + '0' + str(zdx) + "_scale_tmp_bias.fits",
-                                     bias_tmp_mdn, overwrite=True)
-                    else:
-                        fits.writeto(Configuration.BIAS_DIRECTORY + str(zdx) + "_scale_tmp_bias.fits",
-                                     bias_tmp_mdn, overwrite=True)
+                    bias_tmp_filename = Configuration.BIAS_DIRECTORY + str(zdx).zfill(2) + "_scale_tmp_bias.fits"
+                    fits.writeto(bias_tmp_filename,
+                                 bias_tmp_mdn, overwrite=True)
 
                     # update the bulk holder
-                    bias_bulk[zdx] = bias_tmp_mdn
-                    dark_bulk[zdx] = dark_tmp_mdn
+                    #bias_bulk[zdx] = bias_tmp_mdn
+                    #dark_bulk[zdx] = dark_tmp_mdn
+                    bias_bulk_filepath.append(bias_tmp_filename)
+                    dark_bulk_filepath.append(dark_tmp_filename)
                     zdx = zdx + 1
-                    del bias_tmp_mdn
-                    del dark_tmp_mdn
+                    bias_tmp_mdn = None
+                    dark_tmp_mdn = None
+
+            # load bias bulk
+            for index, tmp_bias_file in enumerate(bias_bulk_filepath):
+                bias_bulk[index] = fits.getdata(tmp_bias_file)
 
             # update the header with relevant information
             bias_hdu = fits.PrimaryHDU()
@@ -146,10 +148,14 @@ class Preprocessing:
             bias_header['BIAS_COMB'] = 'median'
             bias_header['NUM_BIAS'] = total_bias
             bias = np.median(bias_bulk[0:zdx], axis=0)
-
+            bias_bulk = None
             # write the image out to the master directory
             fits.writeto(Configuration.CALIBRATION_DIRECTORY + bias_name,
                          bias, bias_header, overwrite=True)
+
+            # load dark bulk
+            for index, tmp_dark_file in enumerate(dark_bulk_filepath):
+                dark_bulk[index] = fits.getdata(tmp_dark_file)
 
             # update the header with relevant information
             dark_hdu = fits.PrimaryHDU()
@@ -159,7 +165,7 @@ class Preprocessing:
             dark_header['EXPTIME'] = 300
             dark_header['BIAS_SUB'] = 'Y'
             dark = np.median(dark_bulk[0:zdx], axis=0)
-
+            dark_bulk = None
             # write the image out to the master directory
             fits.writeto(Configuration.CALIBRATION_DIRECTORY + dark_name,
                          dark, dark_header, overwrite=True)
@@ -200,11 +206,11 @@ class Preprocessing:
 
             # get the image list
             images = pd.read_csv(Configuration.CALIBRATION_DIRECTORY + 'flat_list.csv', sep=',')
-            image_list = images.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.File, axis=1).to_list()
+            image_list = images.apply(lambda x: Configuration.DATA_DIRECTORY + "flats/" + x.Date + x.File, axis=1).to_list()
 
             # determine the number of loops we need to move through for each image
             nfiles = len(image_list)
-            nbulk = 30
+            nbulk = 20
 
             # get the integer and remainder for the combination
             full_bulk = nfiles // nbulk
@@ -217,6 +223,7 @@ class Preprocessing:
 
             # here is the 'holder'
             hold_data = np.ndarray(shape=(hold_bulk, Configuration.AXS_Y_RW, Configuration.AXS_X_RW))
+            hold_data_filepath = []
 
             # update the log
             Utils.log("Generating a master flat field from multiple files in bulks of " + str(nbulk) +
@@ -274,6 +281,7 @@ class Preprocessing:
                             bias_scl[y:y + full_chip_y, x:x + full_chip_x] = (
                                         bias_scl[y:y + full_chip_y, x:x + full_chip_x] +
                                         np.median(img_slice[img_slice > 0]))
+                            img_slice = None
 
                     # now remove the bias from the image
                     flat_bias = flat_tmp - bias_scl
@@ -287,21 +295,25 @@ class Preprocessing:
 
                     # increase the iteration
                     idx_cnt += 1
-                    del flat_tmp
-                    del flat_bias
-                    del bias_scl
+                    flat_tmp = None # set to None since we use it again
+                    flat_bias = None
+                    bias_scl = None
                 # median the data into a single file
-                hold_data[kk] = np.median(block_hold, axis=0)
-                del block_hold
+                #hold_data[kk] = np.median(block_hold, axis=0)
+                block_hold_median = np.median(block_hold, axis=0)
+                block_hold = None
 
                 # write out the temporary file
-                if tmp_num < 10:
-                    fits.writeto(Configuration.FLAT_DIRECTORY + '0' + str(tmp_num) + "_tmp_flat.fits",
-                                 hold_data[kk], overwrite=True)
-                else:
-                    fits.writeto(Configuration.FLAT_DIRECTORY + str(tmp_num) + "_tmp_flat.fits",
-                                 hold_data[kk], overwrite=True)
+                flat_tmp_filename = Configuration.FLAT_DIRECTORY + str(tmp_num).zfill(2) + "_tmp_flat.fits"
+                fits.writeto(flat_tmp_filename,
+                             block_hold_median, overwrite=True)
+                hold_data_filepath.append(flat_tmp_filename)
+                block_hold_median = None
                 tmp_num = tmp_num + 1
+
+            # load tmp files into hold_data
+            for index, tmp_file in enumerate(hold_data_filepath):
+                hold_data[index] = fits.getdata(tmp_file)
 
             # median the mini-images into one large image
             flat_image = np.median(hold_data, axis=0)
@@ -414,25 +426,25 @@ class Preprocessing:
         bkg_estimator = MedianBackground()
 
         #### REMOVE THIS PART FOR NON-47TUC FIELDS!!!!
-        # find the most likely position of the cluster
-        daofind = DAOStarFinder(fwhm=3.0, threshold=50)
-        sources = daofind(img[3000:, 3000:])
+ #       # find the most likely position of the cluster
+ #       daofind = DAOStarFinder(fwhm=3.0, threshold=50)
+ #       sources = daofind(img[3000:, 3000:])
 
-        # find the cluster
-        x_cen = (np.sum(sources[sources['flux'] > 0]['xcentroid'] * sources[sources['flux'] > 0]['flux']) /
-                 np.sum(sources[sources['flux'] > 0]['flux'])) + 3000
-        y_cen = (np.sum(sources[sources['flux'] > 0]['ycentroid'] * sources[sources['flux'] > 0]['flux']) /
-                 np.sum(sources[sources['flux'] > 0]['flux'])) + 3000
+ #       # find the cluster
+ #       x_cen = (np.sum(sources[sources['flux'] > 0]['xcentroid'] * sources[sources['flux'] > 0]['flux']) /
+ #                np.sum(sources[sources['flux'] > 0]['flux'])) + 3000
+ #       y_cen = (np.sum(sources[sources['flux'] > 0]['ycentroid'] * sources[sources['flux'] > 0]['flux']) /
+ #                np.sum(sources[sources['flux'] > 0]['flux'])) + 3000
 
-        # make the masked image
-        mask_img = np.zeros((Configuration.AXS_Y, Configuration.AXS_X))
+ #       # make the masked image
+ #       mask_img = np.zeros((Configuration.AXS_Y, Configuration.AXS_X))
 
-        mask_img[int(y_cen - 1000):int(y_cen + 1000), int(x_cen - 1000):int(x_cen + 1000)] = 1  # TUC-47
-        if ((x_cen - 5200) - 200 > 0) & ((x_cen - 5200) > 0):
-            mask_img[int((y_cen - 500) - 200):int((y_cen - 500) + 200),
-            int((x_cen - 5200) - 200):int((x_cen - 5200) + 200)] = 1 # Other GC
-        #### END REMOVAL FOR NON-47TUC FIELDS!!!!
-
+ #       mask_img[int(y_cen - 1000):int(y_cen + 1000), int(x_cen - 1000):int(x_cen + 1000)] = 1  # TUC-47
+ #       if ((x_cen - 5200) - 200 > 0) & ((x_cen - 5200) > 0):
+ #           mask_img[int((y_cen - 500) - 200):int((y_cen - 500) + 200),
+ #           int((x_cen - 5200) - 200):int((x_cen - 5200) + 200)] = 1 # Other GC
+ #       #### END REMOVAL FOR NON-47TUC FIELDS!!!!
+        mask_img = None
         # do the 2D background estimation, if there is no mask, then remove mask_img
         bkg = Background2D(img, (Configuration.PIX, Configuration.PIX), filter_size=(3, 3),
                            sigma_clip=sigma_clip, bkg_estimator=bkg_estimator, mask=mask_img)
@@ -508,6 +520,7 @@ class Preprocessing:
 
         # make a copy of the bias frame
         bias_scl = bias.copy()
+        del bias # del bias because we do not use it again
 
         # move through x and y to mask the "image" parts of hte image
         for x in range(0, Configuration.AXS_X_RW, full_chip_x):
