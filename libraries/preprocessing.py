@@ -364,15 +364,21 @@ class Preprocessing:
         # keep the isolated stars
         all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:30]
 
+        #load toros mask
+        if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + "mask.fits"):
+            mask = fits.getdata(Configuration.CALIBRATION_DIRECTORY + "mask.fits").astype('bool')
+            Utils.log("Using mask.fits for plate solve.","info")
+        else:
+            mask = None
+            Utils.log("No mask found for plate solve.","info")
+
         # get the stars in the image
         mean, median, std = sigma_clipped_stats(img, sigma=3.0)
         daofind = DAOStarFinder(fwhm=3.0, threshold=100)
-        sources = daofind(img - median)
+        sources = daofind(img - median, mask=mask)
 
         # sort based on "real" stars and only select the top 50 or so
-        sources = sources[(sources['flux'] > 0) &
-                          (sources['xcentroid'] > 2500) &
-                          (sources['ycentroid'] > 2500)]
+        sources = sources[(sources['flux'] > 0)]
         sources.sort('flux', reverse=True)
         sources = sources[0:100]
 
