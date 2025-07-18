@@ -43,6 +43,7 @@ class Configuration:
     SEARCH_DIST = FOV
     EXP_TIME = 300
     GAIN = 0.380  # in e-/ADU
+    PEAKMAX = 45000  # peakmax used in DAOStarFinder. Set to None if not sure
 
     # get image information
     AXS_X_RW = 12000

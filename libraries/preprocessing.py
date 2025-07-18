@@ -5,6 +5,7 @@ import os
 import numpy as np
 import astropy.wcs as pywcs
 import scipy.ndimage
+from astropy.wcs.utils import proj_plane_pixel_scales
 from astropy.io import fits
 from astropy import units as u
 from astropy.coordinates import SkyCoord
@@ -362,7 +363,7 @@ class Preprocessing:
         all_stars = twirl.gaia_radecs(center, 1.25 * fov)
 
         # keep the isolated stars
-        all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:30]
+        all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:20]
 
         #load toros mask
         if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + "mask.fits"):
@@ -374,13 +375,13 @@ class Preprocessing:
 
         # get the stars in the image
         mean, median, std = sigma_clipped_stats(img, sigma=3.0)
-        daofind = DAOStarFinder(fwhm=3.0, threshold=100)
+        daofind = DAOStarFinder(fwhm=3.0, threshold=100, peakmax=Configuration.PEAKMAX)
         sources = daofind(img - median, mask=mask)
 
         # sort based on "real" stars and only select the top 50 or so
         sources = sources[(sources['flux'] > 0)]
         sources.sort('flux', reverse=True)
-        sources = sources[0:100]
+        sources = sources[0:20]
 
         # generate the set up for twirl to match stars
         xy = np.ndarray(shape=(len(sources), 2))
@@ -406,8 +407,14 @@ class Preprocessing:
                  header[v] = (h[idx], h.comments[idx])
 
             # in some cases twirl will fail, but still complete, mark this in the image header so we are aware
-            if header['PC1_1'] < -1:
+            pixscale_x, pixscale_y = proj_plane_pixel_scales(wcs)
+            pixscale_limit = Configuration.PIXEL_SIZE * (1.05)
+
+            if (header['PC1_1'] < -1 or
+                    pixscale_x > pixscale_limit or
+                    pixscale_y > pixscale_limit):
                 header['BAD_WCS'] = 'Y'
+                Utils.log("Bad WCS", "info")
             else:
                 header['BAD_WCS'] = 'N'
 
