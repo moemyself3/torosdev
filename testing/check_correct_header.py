@@ -31,7 +31,7 @@ def correct_header(filename=path+file, mask=mask):
     fov = np.max(np.shape(img)) * pixel.to(u.deg)
 
     all_stars = twirl.gaia_radecs(center, 1.25 * fov)
-    all_stars_sparse = twirl.geometry.sparsify(all_stars, 0.01)[0:30]
+    all_stars_sparse = twirl.geometry.sparsify(all_stars, 0.01)[0:20]
 
     mean, median, std = sigma_clipped_stats(img, sigma=3.0)
     daofind = DAOStarFinder(fwhm=3.0, threshold=100, exclude_border=True, peakmax=45000)

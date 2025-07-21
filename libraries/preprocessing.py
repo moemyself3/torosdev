@@ -345,6 +345,37 @@ class Preprocessing:
         return nflat_image
 
     @staticmethod
+    def get_or_create_twirl_catalog(field, center, fov):
+        """ This function will check for or create a local sparse gaia catalog of the region around the coordinates of center of the image for platesolving.
+
+        :parameter center - SkyCoord, the approximate center of the image to query gaia
+        :parameter fov - the field of view of the image
+        return all_stars - The corrected image will be sent back
+        """
+        twirl_catalog_filepath = Configuration.CALIBRATION_DIRECTORY + field + "_gaia.csv"
+
+        # check if catalog file exists
+        # if it does use the file
+        # else run the query the usual way
+        if os.path.isfile(twirl_catalog_filepath):
+            all_stars = np.loadtxt(twirl_catalog_filepath, delimiter=",")
+            Utils.log("reading catalog from file.","info")
+        else:
+            Utils.log("querying gaia.", "info")
+            # now query the gaia region
+            all_stars = twirl.gaia_radecs(center, 1.25 * fov)
+
+            # keep the isolated stars
+            all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:100]
+
+            # write to file
+            np.savetxt(twirl_catalog_filepath, all_stars, delimiter=",")
+            Utils.log("sparse gaia catalog created.","info")
+    
+        return all_stars
+
+
+    @staticmethod
     def correct_header(img, header):
         """ This function will plate solve the image, add the time stamp, and exposure time to the header if need be.
 
@@ -360,10 +391,11 @@ class Preprocessing:
         fov = np.max(np.shape(img)) * pixel.to(u.deg)
 
         # now query the gaia region
-        all_stars = twirl.gaia_radecs(center, 1.25 * fov)
+        #all_stars = twirl.gaia_radecs(center, 1.25 * fov)
 
         # keep the isolated stars
-        all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:20]
+        #all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:20]
+        all_stars = Preprocessing.get_or_create_twirl_catalog(Configuration.FIELD, center, fov)
 
         #load toros mask
         if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + "mask.fits"):
