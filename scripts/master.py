@@ -283,10 +283,10 @@ class Master:
             master_header['NUM_MAST'] = nfiles
 
             # now mask the bad parts of the image #### THIS WILL CHANGE PER FIELD!!!! LIKELY YOU SHOULD REMOVE#####
-            master[0:490, :] = 0
-            master[10045:-1, :] = 0
-            master[:, 0:530] = 0
-            master[:, 10465:-1] = 0
+#            master[0:490, :] = 0
+#            master[10045:-1, :] = 0
+#            master[:, 0:530] = 0
+#            master[:, 10465:-1] = 0
             #### END LIKELY REMOVE
 
             # write the image out to the master directory

@@ -2,6 +2,8 @@ import pandas as pd
 from config import Configuration
 from libraries.utils import Utils
 import os
+import subprocess
+import shutil
 import numpy as np
 import astropy.wcs as pywcs
 import scipy.ndimage
@@ -376,7 +378,7 @@ class Preprocessing:
 
 
     @staticmethod
-    def correct_header(img, header):
+    def correct_header(img, header, clean_file_name=None):
         """ This function will plate solve the image, add the time stamp, and exposure time to the header if need be.
 
         :parameter img - This is the image you want to plate solve
@@ -384,77 +386,113 @@ class Preprocessing:
 
         return img, header - The corrected image will be sent back
         """
+        if Configuration.PLATE_SOLVE_METHOD.lower() == 'astrometry_net' and clean_file_name is not None:
+            Utils.log("Plate solve method: astrometry_net", "info")
+            working_directory_file = Configuration.WORKING_DIRECTORY + "analysis/" + os.path.basename(clean_file_name) +".temp"
+            fits.writeto(working_directory_file, img, header, overwrite=True)
+            output_file = os.path.splitext(working_directory_file)[0]
+            # set output directory for astrometry
+            output_dir = os.path.dirname(working_directory_file)
 
-        # get the approximate center of the image
-        center = SkyCoord(Configuration.RA, Configuration.DEC, unit=['deg', 'deg'])
-        pixel = Configuration.PIXEL_SIZE * u.arcsec
-        fov = np.max(np.shape(img)) * pixel.to(u.deg)
+            astrometry_command = "solve-field --use-source-extractor --source-extractor-path "+ Configuration.SOURCE_EXTRACTOR_PATH + " --scale-units arcsecperpix --scale-low 0.48 --scale-high 0.5 --no-plots --temp-axy --index-xyls none --match none --rdls none --solved none --corr none --dir " + output_dir + " --new-fits " + output_file + " " + working_directory_file
 
-        # now query the gaia region
-        #all_stars = twirl.gaia_radecs(center, 1.25 * fov)
+            subprocess.run(astrometry_command, shell=True)
 
-        # keep the isolated stars
-        #all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:20]
-        all_stars = Preprocessing.get_or_create_twirl_catalog(Configuration.FIELD, center, fov)
-
-        #load toros mask
-        if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + "mask.fits"):
-            mask = fits.getdata(Configuration.CALIBRATION_DIRECTORY + "mask.fits").astype('bool')
-            Utils.log("Using mask.fits for plate solve.","info")
-        else:
-            mask = None
-            Utils.log("No mask found for plate solve.","info")
-
-        # get the stars in the image
-        mean, median, std = sigma_clipped_stats(img, sigma=3.0)
-        daofind = DAOStarFinder(fwhm=3.0, threshold=100, peakmax=Configuration.PEAKMAX)
-        sources = daofind(img - median, mask=mask)
-
-        # sort based on "real" stars and only select the top 50 or so
-        sources = sources[(sources['flux'] > 0)]
-        sources.sort('flux', reverse=True)
-        sources = sources[0:20]
-
-        # generate the set up for twirl to match stars
-        xy = np.ndarray(shape=(len(sources), 2))
-        idx = 0
-        for xx, yy in zip(sources['xcentroid'], sources['ycentroid']):
-            xy[idx][0] = xx
-            xy[idx][1] = yy
-            idx = idx + 1
-
-        # remove double stars
-        xy = twirl.geometry.sparsify(xy, 30)
-
-        # now begin to match stars and make the header
-        try:
-            # now compute the new wcs
-            wcs = twirl.compute_wcs(xy, all_stars)
-
-            # add the WCS to the header
-            h = wcs.to_header()
-
-            # transfer the header information
-            for idx, v in enumerate(h):
-                 header[v] = (h[idx], h.comments[idx])
-
-            # in some cases twirl will fail, but still complete, mark this in the image header so we are aware
-            pixscale_x, pixscale_y = proj_plane_pixel_scales(wcs)
-            pixscale_limit = Configuration.PIXEL_SIZE * (1.05)
-
-            if (header['PC1_1'] < -1 or
-                    pixscale_x > pixscale_limit or
-                    pixscale_y > pixscale_limit):
-                header['BAD_WCS'] = 'Y'
-                Utils.log("Bad WCS", "info")
+            # Clean up astrometry output, remove .temp and .wcs files
+            astrometry_extensions = [ ".temp", ".wcs"]
+            
+            # First check that astrometry generated plate solved file (.fits)
+            if os.path.exists(output_file):
+                shutil.move(output_file, clean_file_name)
+                Utils.log(f"Cleaned image written as " + clean_file_name + ".", "info")
+                # if file exists then remove extra files
+                for extension in astrometry_extensions:
+                    file_to_remove = output_file + extension
+                    if os.path.exists(file_to_remove):
+                        os.remove(file_to_remove)
+                        Utils.log(f"File {file_to_remove} deleted.", "info")
             else:
-                header['BAD_WCS'] = 'N'
+                # if file does not exist then move the temp file out of clean for review
+                temp_file_name = clean_file_name.replace("/clean/","/review/")
+                shutil.move(working_directory_file, temp_file_name)
+                Utils.log(f"Plate Solve Failed. Moving file to review directory for human inspection.", "info") 
+            return img, header
+        else:
+            if Configuration.PLATE_SOLVE_METHOD.lower() == 'twirl':
+                Utils.log("Plate solve method: twirl", "info")
+            else:
+                Utils.log(f"Plate solve method: {Configuration.PLATE_SOLVE_METHOD} not integrated. Using twirl instead.", "info")
 
-        except:
-            Utils.log("Bad image!", "info")
-            header['BADIMAGE'] = 'Y'
+            # get the approximate center of the image
+            center = SkyCoord(Configuration.RA, Configuration.DEC, unit=['deg', 'deg'])
+            pixel = Configuration.PIXEL_SIZE * u.arcsec
+            fov = np.max(np.shape(img)) * pixel.to(u.deg)
 
-        return img, header
+            # now query the gaia region
+            #all_stars = twirl.gaia_radecs(center, 1.25 * fov)
+
+            # keep the isolated stars
+            #all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:20]
+            all_stars = Preprocessing.get_or_create_twirl_catalog(Configuration.FIELD, center, fov)
+
+            #load toros mask
+            if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + "mask.fits"):
+                mask = fits.getdata(Configuration.CALIBRATION_DIRECTORY + "mask.fits").astype('bool')
+                Utils.log("Using mask.fits for plate solve.","info")
+            else:
+                mask = None
+                Utils.log("No mask found for plate solve.","info")
+
+            # get the stars in the image
+            mean, median, std = sigma_clipped_stats(img, sigma=3.0)
+            daofind = DAOStarFinder(fwhm=3.0, threshold=100, peakmax=Configuration.PEAKMAX)
+            sources = daofind(img - median, mask=mask)
+
+            # sort based on "real" stars and only select the top 50 or so
+            sources = sources[(sources['flux'] > 0)]
+            sources.sort('flux', reverse=True)
+            sources = sources[0:30]
+
+            # generate the set up for twirl to match stars
+            xy = np.ndarray(shape=(len(sources), 2))
+            idx = 0
+            for xx, yy in zip(sources['xcentroid'], sources['ycentroid']):
+                xy[idx][0] = xx
+                xy[idx][1] = yy
+                idx = idx + 1
+
+            # remove double stars
+            xy = twirl.geometry.sparsify(xy, 30)
+
+            # now begin to match stars and make the header
+            try:
+                # now compute the new wcs
+                wcs = twirl.compute_wcs(xy, all_stars)
+
+                # add the WCS to the header
+                h = wcs.to_header()
+
+                # transfer the header information
+                for idx, v in enumerate(h):
+                     header[v] = (h[idx], h.comments[idx])
+
+                # in some cases twirl will fail, but still complete, mark this in the image header so we are aware
+                pixscale_x, pixscale_y = proj_plane_pixel_scales(wcs)
+                pixscale_limit = Configuration.PIXEL_SIZE * (1.05)
+
+                if (header['PC1_1'] < -1 or
+                        pixscale_x > pixscale_limit or
+                        pixscale_y > pixscale_limit):
+                    header['BAD_WCS'] = 'Y'
+                    Utils.log("Bad WCS", "info")
+                else:
+                    header['BAD_WCS'] = 'N'
+
+            except:
+                Utils.log("Bad image!", "info")
+                header['BADIMAGE'] = 'Y'
+
+            return img, header
 
     @staticmethod
     def sky_subtract(img, header, sky_write='N'):

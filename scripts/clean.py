@@ -38,6 +38,8 @@ class Clean:
             output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte + "/" + Configuration.FIELD)
             output_dirs.append(Configuration.DATA_DIRECTORY + "flux/" + dte)
             output_dirs.append(Configuration.DATA_DIRECTORY + "flux/" + dte + "/" + Configuration.FIELD)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "review/" + dte) 
+            output_dirs.append(Configuration.DATA_DIRECTORY + "review/" + dte + "/" + Configuration.FIELD)
 
         Utils.create_directories(output_dirs)
         # break if there are no files
@@ -68,17 +70,18 @@ class Clean:
             if os.path.isfile(file_name) == 0:
 
                 # clean the image
-                clean_img, header, bd_flag = Clean.clean_img(file)
+                clean_img, header, bd_flag = Clean.clean_img(file, file_name)
 
-                # write out the file
-                if bd_flag == 0:
-                    fits.writeto(file_name,
-                                 clean_img, header, overwrite=True)
+                # write out the file if not astrometry_net method
+                if Configuration.PLATE_SOLVE_METHOD != "astrometry_net":
+                    if bd_flag == 0:
+                        fits.writeto(file_name,
+                                     clean_img, header, overwrite=True)
 
-                    # print an update to the cleaning process
-                    Utils.log("Cleaned image written as " + file_name + ".", "info")
-                else:
-                    Utils.log(file_name + " is a bad image. Not written.", "info")
+                        # print an update to the cleaning process
+                        Utils.log("Cleaned image written as " + file_name + ".", "info")
+                    else:
+                        Utils.log(file_name + " is a bad image. Not written.", "info")
 
             Utils.log(str(len(files) - idx - 1) + " images remain to be cleaned.",  "info")
 
@@ -86,7 +89,7 @@ class Clean:
         Utils.log("Imaging cleaning complete in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
 
     @staticmethod
-    def clean_img(file):
+    def clean_img(file, file_name=None):
 
         """ This function is the primary script to clean the image, various other functions found in this class
         can be found in the various libraries imported.
@@ -144,7 +147,7 @@ class Clean:
         if Configuration.PLATE_SOLVE == 'Y':
             st = time.time()
             Utils.log("Now plate solving and correcting the header.", "info")
-            img, header = Preprocessing.correct_header(img, header)
+            img, header = Preprocessing.correct_header(img, header, file_name)
             fn = time.time()
             Utils.log("The image has been plate sovled in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
         Utils.log("Cleaning finished.", "info")
