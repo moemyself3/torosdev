@@ -25,6 +25,9 @@ def check_platescale():
     print(f"total bad wcs: {len(bad_list)}")
     return bad_list
 
+def check_wcs_exists():
+    return collection.files_filtered(wcsaxes=None, include_path=True)
+
 def check_bad_wcs():
     return collection.files_filtered(bad_wcs='Y')
 

@@ -8,6 +8,7 @@ from astropy.io import fits
 from photutils.aperture import CircularAperture
 from photutils.aperture import aperture_photometry
 from astropy.stats import sigma_clipped_stats
+from astropy.wcs import WCS
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
@@ -17,6 +18,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
 import logging
+import shutil
 matplotlib.set_loglevel(level = 'warning')
 matplotlib.use("TkAgg")
 pil_logger = logging.getLogger('PIL')
@@ -91,12 +93,53 @@ class BigDiff:
         org_header['WCSAXES'] = master_header['WCSAXES']
         org_header['CRPIX1'] = master_header['CRPIX1']
         org_header['CRPIX2'] = master_header['CRPIX2']
-        org_header['PC1_1'] = master_header['PC1_1']
-        org_header['PC1_2'] = master_header['PC1_2']
-        org_header['PC2_1'] = master_header['PC2_1']
-        org_header['PC2_2'] = master_header['PC2_2']
-        org_header['CDELT1'] = master_header['CDELT1']
-        org_header['CDELT2'] = master_header['CDELT2']
+
+        try:
+            org_header['PC1_1'] = master_header['PC1_1']
+            org_header['PC1_2'] = master_header['PC1_2']
+            org_header['PC2_1'] = master_header['PC2_1']
+            org_header['PC2_2'] = master_header['PC2_2']
+            org_header['CDELT1'] = master_header['CDELT1']
+            org_header['CDELT2'] = master_header['CDELT2']
+
+        except KeyError as e:
+            Utils.log(f"{e}... Trying with CDi_j instead.", "info")
+            org_header['CD1_1'] = master_header['CD1_1']
+            org_header['CD1_2'] = master_header['CD1_2']
+            org_header['CD2_1'] = master_header['CD2_1']
+            org_header['CD2_2'] = master_header['CD2_2']
+
+        if WCS(master_header).has_distortion:
+            org_header['A_ORDER'] = master_header['A_ORDER']
+            org_header['A_0_0'] = master_header['A_0_0']
+            org_header['A_0_1'] = master_header['A_0_1']
+            org_header['A_0_2'] = master_header['A_0_2']
+            org_header['A_1_0'] = master_header['A_1_0']
+            org_header['A_1_1'] = master_header['A_1_1']
+            org_header['A_2_0'] = master_header['A_2_0']
+            org_header['B_ORDER'] = master_header['B_ORDER']
+            org_header['B_0_0'] = master_header['B_0_0']
+            org_header['B_0_1'] = master_header['B_0_1']
+            org_header['B_0_2'] = master_header['B_0_2']
+            org_header['B_1_0'] = master_header['B_1_0']
+            org_header['B_1_1'] = master_header['B_1_1']
+            org_header['B_2_0'] = master_header['B_2_0']
+
+            org_header['AP_ORDER'] = master_header['AP_ORDER']
+            org_header['AP_0_0'] = master_header['AP_0_0']
+            org_header['AP_0_1'] = master_header['AP_0_1']
+            org_header['AP_0_2'] = master_header['AP_0_2']
+            org_header['AP_1_0'] = master_header['AP_1_0']
+            org_header['AP_1_1'] = master_header['AP_1_1']
+            org_header['AP_2_0'] = master_header['AP_2_0']
+            org_header['BP_ORDER'] = master_header['BP_ORDER']
+            org_header['BP_0_0'] = master_header['BP_0_0']
+            org_header['BP_0_1'] = master_header['BP_0_1']
+            org_header['BP_0_2'] = master_header['BP_0_2']
+            org_header['BP_1_0'] = master_header['BP_1_0']
+            org_header['BP_1_1'] = master_header['BP_1_1']
+            org_header['BP_2_0'] = master_header['BP_2_0']
+
         org_header['CUNIT1'] = master_header['CUNIT1']
         org_header['CUNIT2'] = master_header['CUNIT2']
         org_header['CTYPE1'] = master_header['CTYPE1']
@@ -105,8 +148,13 @@ class BigDiff:
         org_header['CRVAL2'] = master_header['CRVAL2']
         org_header['LONPOLE'] = master_header['LONPOLE']
         org_header['LATPOLE'] = master_header['LATPOLE']
-        org_header['MJDREF'] = master_header['MJDREF']
-        org_header['RADESYS'] = master_header['RADESYS']
+
+        try:
+            org_header['MJDREF'] = master_header['MJDREF']
+            org_header['RADESYS'] = master_header['RADESYS']
+        except KeyError as e:
+            Utils.log(f"{e}... Skipping keywords MJDREF, RADESYS.", "info")
+
         org_header['ALIGNED'] = 'Y'
 
         fits.writeto(Configuration.CODE_DIFFERENCE_DIRECTORY + 'img.fits',
@@ -147,17 +195,18 @@ class BigDiff:
         header['nstars'] = nstars
 
         # now mask the missing master frame parts #### THIS WILL CHANGE PER FIELD!!!! LIKELY YOU SHOULD REMOVE#####
-        dimg[0:490, :] = 0
-        dimg[10045:-1, :] = 0
-        dimg[:, 0:530] = 0
-        dimg[:, 10465:-1] = 0
+        #dimg[0:490, :] = 0
+        #dimg[10045:-1, :] = 0
+        #dimg[:, 0:530] = 0
+        #dimg[:, 10465:-1] = 0
         #### END LIKELY REMOVE
 
         # update the image with the new file header
         fits.writeto('dimg.fits', dimg, header, overwrite=True)
 
         # move the differenced file to the difference directory
-        os.system('mv dimg.fits ' + out_name)
+        #os.system('mv dimg.fits ' + out_name)
+        shutil.move('dimg.fits', out_name) 
 
         # change back to the working directory
         os.chdir(Configuration.WORKING_DIRECTORY)
@@ -177,7 +226,7 @@ class BigDiff:
                     and the code is compiled for differencing
         """
         # compile the oisdifference.c code
-        os.system('cp oisdifference.c ' + Configuration.CODE_DIFFERENCE_DIRECTORY)
+        shutil.copy2('oisdifference.c',  Configuration.CODE_DIFFERENCE_DIRECTORY)
         os.chdir(Configuration.CODE_DIFFERENCE_DIRECTORY)
         os.system('gcc `pkg-config --cflags --libs cfitsio` oisdifference.c')
         os.chdir(Configuration.WORKING_DIRECTORY)
@@ -204,13 +253,13 @@ class BigDiff:
         ## REMOVE THIS PART FOR NON-47TUC FIELDS!!!!
         # remove stars near 47 Tuc and the small cluster
 
-        diff_list['bd_star'] = np.where((diff_list['xcen'] > 4300) & (diff_list['xcen'] < 9300) &
-                                        (diff_list['ycen'] > 3600) & (diff_list['ycen'] < 8200), 1, 0)
-        diff_list['bd_star'] = np.where((diff_list['xcen'] > 1200) & (diff_list['xcen'] < 1900) &
-                                         (diff_list['ycen'] > 5100) & (diff_list['ycen'] < 5600), 2,
-                                        diff_list['bd_star'])
-        diff_list = diff_list[diff_list.bd_star == 0].copy().reset_index(drop=True)
-        ## END REMOVAL FOR NON-47TUC FIELDS!!!!
+       # diff_list['bd_star'] = np.where((diff_list['xcen'] > 4300) & (diff_list['xcen'] < 9300) &
+       #                                 (diff_list['ycen'] > 3600) & (diff_list['ycen'] < 8200), 1, 0)
+       # diff_list['bd_star'] = np.where((diff_list['xcen'] > 1200) & (diff_list['xcen'] < 1900) &
+       #                                  (diff_list['ycen'] > 5100) & (diff_list['ycen'] < 5600), 2,
+       #                                 diff_list['bd_star'])
+       # diff_list = diff_list[diff_list.bd_star == 0].copy().reset_index(drop=True)
+       # ## END REMOVAL FOR NON-47TUC FIELDS!!!!
 
         # now check for stars based on their magnitude differences
         positions = np.transpose((diff_list['xcen'], diff_list['ycen']))

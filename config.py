@@ -20,10 +20,10 @@ class Configuration:
     TRANSIENT_DEC = -21.9258309  # -38.93038375  # -30.269894 #
 
     # steps to skip
-    CLEAN_SKIP = 'N'
-    WRITE_SKY = 'N'
-    MASTER_SKIP = 'N'
-    DIFFERENCE_SKIP = 'Y'
+    CLEAN_SKIP = 'Y'
+    WRITE_SKY = 'Y'
+    MASTER_SKIP = 'Y'
+    DIFFERENCE_SKIP = 'N'
     PHOTOMETRY_SKIP = 'Y'
     LIGHTCURVE_SKIP = 'Y'
 
