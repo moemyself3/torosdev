@@ -116,20 +116,23 @@ class Photometry:
 
         :return - Nothing is being returned, but the raw files are output to disk
         """
-
+        STAR_LIST_MAX = 30000
         # pull in the star list for the photometry
         star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt',
                                 delimiter=' ',
                                 header=0)
 
         # get the flux files to read in
-        files, dates = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
+        files, dates = Utils.get_all_files_per_field(Configuration.FLUX_DIRECTORY,
                                                      Configuration.FIELD,
                                                      'diff',
                                                      '.flux')
         nfiles = len(files)
 
         num_rrows = len(star_list)
+
+        if num_rrows > STAR_LIST_MAX:
+            num_rrows = STAR_LIST_MAX
 
         # make the holders for the light curves
         jd = np.zeros(nfiles)
@@ -155,7 +158,7 @@ class Photometry:
             if (idy % 100 == 0) & (idy > 0):
                 Utils.log("100 flux files read. " + str(nfiles - idy - 1) + ' files remain.', "info")
 
-        for idy, row in star_list.loc[0:30000].iterrows():
+        for idy, row in star_list.loc[0:num_rrows].iterrows():
 
             # get the distance to all stars
             dd = np.sqrt((row.xcen - star_list.xcen.to_numpy()) ** 2 +
@@ -208,7 +211,10 @@ class Photometry:
 
         Utils.log("Starting light curve writing...", "info")
 
-        for idx in range(0, 30000):
+        if nstars > 30000:
+            nstars = 30000
+
+        for idx in range(0, nstars):
             star_id = str(src_id[idx])
 
             # add the time, magnitude and error to the data frame

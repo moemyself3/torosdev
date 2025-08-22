@@ -24,8 +24,8 @@ class Configuration:
     WRITE_SKY = 'Y'
     MASTER_SKIP = 'Y'
     DIFFERENCE_SKIP = 'Y'
-    PHOTOMETRY_SKIP = 'N'
-    LIGHTCURVE_SKIP = 'Y'
+    PHOTOMETRY_SKIP = 'Y'
+    LIGHTCURVE_SKIP = 'N'
 
     # how do you want to clean the image?
     SUBTRACT_BIAS = "Y"
