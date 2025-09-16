@@ -12,6 +12,17 @@ import astropy.units as u
 
 import os
 
+# The general logic for the main script
+#   1. generate galaxy list
+#   2. make master cutouts
+#   3. make science cutouts
+#   4. make differenced cutouts
+#   5. save fits file with:
+#       - WCS
+#       - master cutout
+#       - science cutout
+#       - difference cutout
+
 CUTOUT_WIDTH = 276 # in pixels
 PARALLEL = False
 
@@ -25,6 +36,8 @@ class Field:
                                      unit=(u.deg, u.deg))
 
     def catalog_query(self):
+        # TODO: check if local version exists otherwise
+        # run query online
         vizier = Vizier()
         results = vizier.query_region(self.coords,
                                       width=self.width,
@@ -65,6 +78,10 @@ def generate_cutouts():
     # consider galaxies on edges of frame
 
     # load master, source, and differenced frames
+    file_types = ['master', 'science', 'difference']
+    for file_type in file_types:
+        if file_type == "master":
+            file = Configuration.MASTER_DIRECTORY + toros_field.name + "_master" + Configuration.FILE_EXTENSION
     hdu = fits.open(file)[0]
     wcs = WCS(hdu.header)
 
@@ -78,8 +95,12 @@ def generate_cutouts():
             pool.starmap(cutout, args)
     else:
         for galaxy in galaxies:
-            cutout(hdu, wcs, postion, cutout_name)
+            single_cutout(hdu, wcs, postion, differenced_path, galaxy)
 
+    #files, dates = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
+    #                                               Configuration.FIELD,
+    #                                                'diff',
+    #                                                Configuration.FILE_EXTENSION)
 
 if __name__ == "__main__":
     pass
