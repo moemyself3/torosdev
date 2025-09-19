@@ -3,9 +3,12 @@ from libraries.utils import Utils
 
 from astropy.io import fits
 from astropy.nddata import Cutout2D
+from astropy.nddata.utils import NoOverlapError
 from astropy.wcs import WCS
+from astropy.visualization import ZScaleInterval
 from astroquery.vizier import Vizier
 from ccdproc import ImageFileCollection
+from matplotlib import pyplot as plt
 
 import astropy.coordinates as coord
 import astropy.units as u
@@ -38,7 +41,7 @@ class Field:
     def catalog_query(self):
         # TODO: check if local version exists otherwise
         # run query online
-        vizier = Vizier()
+        vizier = Vizier(row_limit=-1) # minus 1 returns all rows
         results = vizier.query_region(self.coords,
                                       width=self.width,
                                       catalog='VII/291/gladep')
@@ -56,19 +59,58 @@ def single_cutout(hdu, wcs, position, differenced_path, galaxy):
 
      """
     # make the full path for cutout file
-    cutout_path = differenced_path.replace("/diff/", "/cutout/")
+    #cutout_path = differenced_path.replace("/diff/", "/cutout/")
+    cutout_path = differenced_path
     cutout_path = os.path.dirname(cutout_path)
-
+    Utils.log(f"Cutout path: {cutout_path}", "info")
     datetimeinfo = hdu.header['DATE']
-    cutout_name = "gp_"+galaxy["GLADE+"].zfill(9)+"_"+datetimeinfo+Configuration.FILE_EXTENSION
+    datetimeinfo = datetimeinfo.replace("-", "")
+    datetimeinfo = datetimeinfo.replace(":", "")
+    cutout_name = "gp_"+galaxy["GLADE+"].astype("str").zfill(9)+"_"+datetimeinfo+Configuration.FILE_EXTENSION
     cutout_filename = cutout_path + "/" + cutout_name
-
-    if not os.isfile(cutout_filename):
-        cutout = Cutout2D(hdu.data, position, CUTOUT_WIDTH, wcs=wcs)
-        # save cutout
-        cutout.write(cutout_path)
+    Utils.log(f"Cutout filename: {cutout_filename}", "info")
+    Utils.log(f"position: {position} ", "debug")
+    Utils.log(f"position xy: {wcs.world_to_pixel(position)}","debug")
+    cutout_hdu = fits.PrimaryHDU(data=hdu.data, header=hdu.header)
+    if not os.path.isfile(cutout_filename):
+        try:
+            cutout = Cutout2D(hdu.data, position, CUTOUT_WIDTH, wcs=wcs, mode='partial')
+            # save cutout
+            cutout_hdu.data = cutout.data
+            cutout_hdu.header.update(cutout.wcs.to_header())
+            cutout_hdu.writeto(cutout_filename)
+        except NoOverlapError:
+            Utils.log(f"No Overlap!! Skipping.", "info")
     else:
-        Utils.log(f"Cutout {cutout_path} already exists. Skipping...", "info")
+        Utils.log(f"Cutout {cutout_filename} already exists. Skipping...", "info")
+
+
+
+def generate_master_cutouts():
+    # get list of galaxies based on toros field from GLADE+
+    toros_field = Field()
+    galaxies = toros_field.catalog_query()
+
+    # consider galaxies on edges of frame
+
+    # load master frame
+    file = Configuration.MASTER_DIRECTORY + toros_field.name + "_master" + Configuration.FILE_EXTENSION
+    hdu = fits.open(file)[0]
+    wcs = WCS(hdu.header)
+
+    if not wcs.is_celestial:
+        wcs = None
+
+    if PARALLEL:
+        # pack args for starmap
+        args = None
+        with Pool(processes=4) as pool:
+            pool.starmap(cutout, args)
+    else:
+        for galaxy in galaxies:
+            position = coord.SkyCoord(ra=galaxy['RAJ2000']*u.deg, dec=galaxy['DEJ2000']*u.deg)
+            single_cutout(hdu, wcs, position, Configuration.CUTOUT_DIRECTORY+toros_field.name+ "/", galaxy)
+
 
 def generate_cutouts():
     # get list of galaxies based on toros field from GLADE+
@@ -95,12 +137,22 @@ def generate_cutouts():
             pool.starmap(cutout, args)
     else:
         for galaxy in galaxies:
-            single_cutout(hdu, wcs, postion, differenced_path, galaxy)
+            position = coord.SkyCoord(ra=galaxy['RAJ2000']*u.deg, dec=galaxy['DEJ2000']*u.deg)
+            single_cutout(hdu, wcs, position, differenced_path, galaxy)
 
     #files, dates = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
     #                                               Configuration.FIELD,
     #                                                'diff',
     #                                                Configuration.FILE_EXTENSION)
+
+def fits_to_jpg(filename):
+    # Load data
+    data = fits.getdata(filename)
+    zscale = ZScaleInterval()
+    plt.imshow(zscale(data), cmap='gray')
+    filename = os.path.splitext(filename)[0] + ".png"
+    plt.axis('off')
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0)
 
 if __name__ == "__main__":
     pass
