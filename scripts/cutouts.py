@@ -47,7 +47,7 @@ class Field:
                                       catalog='VII/291/gladep')
         return results[0] # only return the table
 
-def single_cutout(hdu, wcs, position, differenced_path, galaxy):
+def single_cutout(hdu, wcs, position, output_dir, galaxy):
     """ Writes new cutout or stamp. Follow similar steps to
     https://docs.astropy.org/en/stable/nddata/utils.html#cutout-images
 
@@ -59,8 +59,7 @@ def single_cutout(hdu, wcs, position, differenced_path, galaxy):
 
      """
     # make the full path for cutout file
-    #cutout_path = differenced_path.replace("/diff/", "/cutout/")
-    cutout_path = differenced_path
+    cutout_path = output_dir
     cutout_path = os.path.dirname(cutout_path)
     Utils.log(f"Cutout path: {cutout_path}", "info")
     datetimeinfo = hdu.header['DATE']
@@ -111,20 +110,26 @@ def generate_master_cutouts():
             position = coord.SkyCoord(ra=galaxy['RAJ2000']*u.deg, dec=galaxy['DEJ2000']*u.deg)
             single_cutout(hdu, wcs, position, Configuration.CUTOUT_DIRECTORY+toros_field.name+ "/", galaxy)
 
-
-def generate_cutouts():
+def generate_cutouts_from_filepath(filepath, filetype=""):
     # get list of galaxies based on toros field from GLADE+
     toros_field = Field()
     galaxies = toros_field.catalog_query()
 
     # consider galaxies on edges of frame
 
-    # load master, source, and differenced frames
-    file_types = ['master', 'science', 'difference']
-    for file_type in file_types:
-        if file_type == "master":
-            file = Configuration.MASTER_DIRECTORY + toros_field.name + "_master" + Configuration.FILE_EXTENSION
-    hdu = fits.open(file)[0]
+    # make output directroy
+    output_dir = Configuration.CUTOUT_DIRECTORY + toros_field.name + "/"
+    if filetype.lower() == "diff":
+        output_dir += "diff/"
+    elif filetype.lower() == "master":
+        output_dir += "master/"
+    elif filetype.lower() == "clean":
+        output_dir += "clean/"
+    else:
+        Utils.log(f"Filetype {filetype.lower()} is not implemented. Writing files to {output_dir}.", "info")
+
+    # load master frame
+    hdu = fits.open(filepath)[0]
     wcs = WCS(hdu.header)
 
     if not wcs.is_celestial:
@@ -138,12 +143,8 @@ def generate_cutouts():
     else:
         for galaxy in galaxies:
             position = coord.SkyCoord(ra=galaxy['RAJ2000']*u.deg, dec=galaxy['DEJ2000']*u.deg)
-            single_cutout(hdu, wcs, position, differenced_path, galaxy)
+            single_cutout(hdu, wcs, position, output_dir, galaxy)
 
-    #files, dates = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
-    #                                               Configuration.FIELD,
-    #                                                'diff',
-    #                                                Configuration.FILE_EXTENSION)
 
 def fits_to_jpg(filename):
     # Load data
