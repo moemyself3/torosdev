@@ -9,6 +9,8 @@ from astropy.visualization import ZScaleInterval
 from astroquery.vizier import Vizier
 from ccdproc import ImageFileCollection
 from matplotlib import pyplot as plt
+from multiprocessing import Pool
+from itertools import repeat
 
 import astropy.coordinates as coord
 import astropy.units as u
@@ -47,41 +49,43 @@ class Field:
                                       catalog='VII/291/gladep')
         return results[0] # only return the table
 
-def single_cutout(hdu, wcs, position, output_dir, galaxy):
+def single_cutout_from_filepath(filepath, position, output_dir, galaxy_id):
     """ Writes new cutout or stamp. Follow similar steps to
     https://docs.astropy.org/en/stable/nddata/utils.html#cutout-images
 
-    :parameter hdu - The hdu to make the cutout from. Contains data & header
-    :parameter wcs - WCS object of the original frame.
+    :parameter filepath - path to file
     :parameter position - center position of the cutout
+    :output_dir - 
+    :galaxy_id - (str) galaxy id  
 
     :return Nothing is returned, the image is cutout
 
      """
-    # make the full path for cutout file
-    cutout_path = output_dir
-    cutout_path = os.path.dirname(cutout_path)
-    Utils.log(f"Cutout path: {cutout_path}", "info")
-    datetimeinfo = hdu.header['DATE']
-    datetimeinfo = datetimeinfo.replace("-", "")
-    datetimeinfo = datetimeinfo.replace(":", "")
-    cutout_name = "gp_"+galaxy["GLADE+"].astype("str").zfill(9)+"_"+datetimeinfo+Configuration.FILE_EXTENSION
-    cutout_filename = cutout_path + "/" + cutout_name
-    Utils.log(f"Cutout filename: {cutout_filename}", "info")
-    Utils.log(f"position: {position} ", "debug")
-    Utils.log(f"position xy: {wcs.world_to_pixel(position)}","debug")
-    cutout_hdu = fits.PrimaryHDU(data=hdu.data, header=hdu.header)
-    if not os.path.isfile(cutout_filename):
-        try:
-            cutout = Cutout2D(hdu.data, position, CUTOUT_WIDTH, wcs=wcs, mode='partial')
-            # save cutout
-            cutout_hdu.data = cutout.data
-            cutout_hdu.header.update(cutout.wcs.to_header())
-            cutout_hdu.writeto(cutout_filename)
-        except NoOverlapError:
-            Utils.log(f"No Overlap!! Skipping.", "info")
-    else:
-        Utils.log(f"Cutout {cutout_filename} already exists. Skipping...", "info")
+    with fits.open(filepath) as hdul:
+        hdu = hdul[0]
+        wcs = WCS(hdu.header)
+
+        # make the full path for cutout file
+        cutout_path = output_dir
+        cutout_path = os.path.dirname(cutout_path)
+        datetimeinfo = hdu.header['DATE']
+        datetimeinfo = datetimeinfo.replace("-", "")
+        datetimeinfo = datetimeinfo.replace(":", "")
+        cutout_name = "gp_"+galaxy_id+"_"+datetimeinfo+Configuration.FILE_EXTENSION
+        cutout_filename = cutout_path + "/" + cutout_name
+        Utils.log(f"Cutout filename: {cutout_filename}", "info")
+        cutout_hdu = fits.PrimaryHDU(data=hdu.data, header=hdu.header)
+        if not os.path.isfile(cutout_filename):
+            try:
+                cutout = Cutout2D(hdu.data, position, CUTOUT_WIDTH, wcs=wcs, mode='partial')
+                # save cutout
+                cutout_hdu.data = cutout.data
+                cutout_hdu.header.update(cutout.wcs.to_header())
+                cutout_hdu.writeto(cutout_filename)
+            except NoOverlapError:
+                Utils.log(f"No Overlap!! Skipping.", "info")
+        else:
+            Utils.log(f"Cutout {cutout_filename} already exists. Skipping...", "info")
 
 
 
@@ -100,17 +104,13 @@ def generate_master_cutouts():
     if not wcs.is_celestial:
         wcs = None
 
-    if PARALLEL:
-        # pack args for starmap
-        args = None
-        with Pool(processes=4) as pool:
-            pool.starmap(cutout, args)
-    else:
-        for galaxy in galaxies:
-            position = coord.SkyCoord(ra=galaxy['RAJ2000']*u.deg, dec=galaxy['DEJ2000']*u.deg)
-            single_cutout(hdu, wcs, position, Configuration.CUTOUT_DIRECTORY+toros_field.name+ "/", galaxy)
+    for galaxy in galaxies:
+        position = coord.SkyCoord(ra=galaxy['RAJ2000']*u.deg, dec=galaxy['DEJ2000']*u.deg)
+        galaxy_id = galaxy["GLADE+"].astype("str").zfill(9)
+        single_cutout_from_filepath(file, position, Configuration.CUTOUT_DIRECTORY+toros_field.name+ "/", galaxy_id)
 
 def generate_cutouts_from_filepath(filepath, filetype=""):
+    Utils.log("Generating {filetype} cutouts for file: {filepath}", "info")
     # get list of galaxies based on toros field from GLADE+
     toros_field = Field()
     galaxies = toros_field.catalog_query()
@@ -136,15 +136,28 @@ def generate_cutouts_from_filepath(filepath, filetype=""):
         wcs = None
 
     if PARALLEL:
+        Utils.log("Using multiprocessing!","info")
+        # Generate iterable of positions for each galaxy
+        positions = []
+        galaxy_ids = []
+        for galaxy in galaxies:
+            position = coord.SkyCoord(ra=galaxy['RAJ2000']*u.deg,
+                                      dec=galaxy['DEJ2000']*u.deg)
+            positions.append(position)
+            galaxy_ids.append(galaxy["GLADE+"].astype("str").zfill(9))
         # pack args for starmap
-        args = None
+        args = zip(repeat(filepath), positions, repeat(output_dir), galaxy_ids)
+
         with Pool(processes=4) as pool:
-            pool.starmap(cutout, args)
+            pool.starmap(single_cutout_from_filepath, args)
     else:
         for galaxy in galaxies:
-            position = coord.SkyCoord(ra=galaxy['RAJ2000']*u.deg, dec=galaxy['DEJ2000']*u.deg)
-            single_cutout(hdu, wcs, position, output_dir, galaxy)
+            position = coord.SkyCoord(ra=galaxy['RAJ2000']*u.deg,
+                                      dec=galaxy['DEJ2000']*u.deg)
+            galaxy_id = galaxy["GLADE+"].astype("str").zfill(9)
+            single_cutout_from_filepath(filepath,  position, output_dir, galaxy_id)
 
+    Utils.log("Done!! Cutout process complete for {filepath}", "info")
 
 def fits_to_jpg(filename):
     # Load data
