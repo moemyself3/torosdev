@@ -11,6 +11,7 @@ from ccdproc import ImageFileCollection
 from matplotlib import pyplot as plt
 from multiprocessing import Pool
 from itertools import repeat
+from tqdm import tqdm
 
 import astropy.coordinates as coord
 import astropy.units as u
@@ -30,6 +31,7 @@ import os
 
 CUTOUT_WIDTH = 276 # in pixels
 PARALLEL = False
+PROCESSORS = os.cpu_count() - 1
 
 class Field:
     def __init__(self):
@@ -110,7 +112,7 @@ def generate_master_cutouts():
         single_cutout_from_filepath(file, position, Configuration.CUTOUT_DIRECTORY+toros_field.name+ "/", galaxy_id)
 
 def generate_cutouts_from_filepath(filepath, filetype=""):
-    Utils.log("Generating {filetype} cutouts for file: {filepath}", "info")
+    Utils.log(f"Generating {filetype} cutouts for file: {filepath}", "info")
     # get list of galaxies based on toros field from GLADE+
     toros_field = Field()
     galaxies = toros_field.catalog_query()
@@ -148,7 +150,7 @@ def generate_cutouts_from_filepath(filepath, filetype=""):
         # pack args for starmap
         args = zip(repeat(filepath), positions, repeat(output_dir), galaxy_ids)
 
-        with Pool(processes=4) as pool:
+        with Pool(processes=PROCESSORS) as pool:
             pool.starmap(single_cutout_from_filepath, args)
     else:
         for galaxy in galaxies:
@@ -157,7 +159,7 @@ def generate_cutouts_from_filepath(filepath, filetype=""):
             galaxy_id = galaxy["GLADE+"].astype("str").zfill(9)
             single_cutout_from_filepath(filepath,  position, output_dir, galaxy_id)
 
-    Utils.log("Done!! Cutout process complete for {filepath}", "info")
+    Utils.log(f"Done!! Cutout process complete for {filepath}", "info")
 
 def fits_to_jpg(filename):
     # Load data
@@ -167,6 +169,22 @@ def fits_to_jpg(filename):
     filename = os.path.splitext(filename)[0] + ".png"
     plt.axis('off')
     plt.savefig(filename, bbox_inches='tight', pad_inches=0)
+
+def generate_cutouts_clean_per_field():
+    fieldname = Field().name
+    Utils.log(f"Generating cutouts for all CLEAN files for {fieldname}", "info")
+    files, dates = Utils.get_all_files_per_field(
+                    Configuration.CLEAN_DIRECTORY,
+                    fieldname,
+                    'cutout',
+                    '.fits')
+
+    numfiles = len(files)
+
+    for idx, file in enumerate(tqdm(files)):
+        generate_cutouts_from_filepath(file, filetype="clean")
+        Utils.log(f"{idx} of {numfiles} files complete","info")
+    Utils.log("All done making CLEAN cutouts!", "info")
 
 if __name__ == "__main__":
     pass
