@@ -4,6 +4,7 @@ directory in utils, fits, photometry, image, and preprocessing libraries."""
 from libraries.utils import Utils
 from libraries.preprocessing import Preprocessing
 from config import Configuration
+from multiprocessing import Pool
 import os
 from astropy.io import fits
 import time
@@ -47,7 +48,7 @@ class Clean:
             Utils.log("No .fits files found for " + Configuration.FIELD + "!" +  ". Breaking...",
                       "debug")
             return()
-        
+
         Utils.log("Starting to clean " + str(len(files)) + " images.", "info")
         for idx, file in enumerate(files):
 
@@ -71,17 +72,6 @@ class Clean:
 
                 # clean the image
                 clean_img, header, bd_flag = Clean.clean_img(file, file_name)
-
-                # write out the file if not astrometry_net method
-                if Configuration.PLATE_SOLVE_METHOD != "astrometry_net":
-                    if bd_flag == 0:
-                        fits.writeto(file_name,
-                                     clean_img, header, overwrite=True)
-
-                        # print an update to the cleaning process
-                        Utils.log("Cleaned image written as " + file_name + ".", "info")
-                    else:
-                        Utils.log(file_name + " is a bad image. Not written.", "info")
 
             Utils.log(str(len(files) - idx - 1) + " images remain to be cleaned.",  "info")
 
@@ -154,4 +144,97 @@ class Clean:
 
         bd_flag = 0
 
+        # write out the file if not astrometry_net method
+        if Configuration.PLATE_SOLVE_METHOD != "astrometry_net":
+            if bd_flag == 0:
+                fits.writeto(file_name,
+                             img, header, overwrite=True)
+
+                # print an update to the cleaning process
+                Utils.log("Cleaned image written as " + file_name + ".", "info")
+            else:
+                Utils.log(file_name + " is a bad image. Not written.", "info")
+
         return img, header, bd_flag
+
+    @staticmethod
+    def parallel_clean_images():
+        """ This is the main function script to clean multiple images, alternatively clean_img can be used to clean
+        a single image.
+
+        return no value is returned, the values images from in_path are cleaned and deposited in out_path
+        """
+        st = time.time()  # clock started
+        Utils.log("Starting PARALLEL cleaning.", "info")
+        # get the file list for all dates the FIELD was observed
+        Utils.log("Getting file list...", "info")
+        files, date_dirs = Utils.get_all_files_per_field(Configuration.RAW_DIRECTORY,
+                                                         Configuration.FIELD,
+                                                         'raw',
+                                                         Configuration.FILE_EXTENSION)
+
+        # make the output directories for the clean, difference, and flux files
+        output_dirs = []
+
+        for dte in date_dirs:
+            output_dirs.append(Configuration.DATA_DIRECTORY + "clean/" + dte)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "clean/" + dte + "/" + Configuration.FIELD)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte + "/" + Configuration.FIELD)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "flux/" + dte)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "flux/" + dte + "/" + Configuration.FIELD)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "review/" + dte) 
+            output_dirs.append(Configuration.DATA_DIRECTORY + "review/" + dte + "/" + Configuration.FIELD)
+
+        Utils.create_directories(output_dirs)
+        # break if there are no files
+        if len(files) == 0:
+            Utils.log("No .fits files found for " + Configuration.FIELD + "!" +  ". Breaking...",
+                      "debug")
+            return()
+
+        Utils.log("Starting to clean " + str(len(files)) + " images.", "info")
+
+        # make list of new file_names and check if they exist
+        file_name_args = [] # list of tuples (file, file_name) for pool.starmap
+
+        for idx, file in enumerate(files):
+
+            # make a new name for the file based on which actions are taken
+            file_name = Preprocessing.mk_nme(file,
+                                             'N',
+                                             Configuration.SUBTRACT_BIAS,
+                                             Configuration.SUBTRACT_DARK,
+                                             Configuration.DIVIDE_FLAT,
+                                             Configuration.CLIP_IMAGE,
+                                             Configuration.SUBTRACT_SKY,
+                                             Configuration.PLATE_SOLVE)
+
+            # only create the files that don't exist
+            if os.path.isfile(file_name) == 1:
+                Utils.log("Image " + file_name +
+                          " already exists. Skipping for now...", "info")
+
+            # if the image does not exist then clean
+            if os.path.isfile(file_name) == 0:
+                file_name_args.append((file, file_name))
+
+        #check if calibration files exist
+        # Do not run clean_img in parallel with out them
+        # you will start to make multiple calibration files
+        # remove bias and dark as necessary
+        if (Configuration.SUBTRACT_BIAS == 'Y') & (Configuration.SUBTRACT_DARK == 'Y'):
+            Preprocessing.mk_combined_bias_and_dark(image_overwrite='N')
+
+        # flat divide if necessary
+        if Configuration.DIVIDE_FLAT == 'Y':
+            Preprocessing.mk_flat(5, 300)
+
+        # clean the images in parallel!
+        with Pool(processes=Configuration.PROCESSORS) as pool:
+            pool.starmap(Clean.clean_img, file_name_args)
+
+        fn = time.time()  # clock stopped
+        Utils.log("Imaging cleaning complete in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
+
+

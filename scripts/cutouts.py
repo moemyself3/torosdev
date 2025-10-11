@@ -31,7 +31,7 @@ import os
 
 CUTOUT_WIDTH = 276 # in pixels
 PARALLEL = False
-PROCESSORS = os.cpu_count() - 1
+PROCESSORS = Configuration.PROCESSORS
 
 class Field:
     def __init__(self):
@@ -185,6 +185,30 @@ def generate_cutouts_clean_per_field():
         generate_cutouts_from_filepath(file, filetype="clean")
         Utils.log(f"{idx} of {numfiles} files complete","info")
     Utils.log("All done making CLEAN cutouts!", "info")
+
+def generate_all_cutouts_per_field(filetype="clean"):
+    fieldname = Field().name
+    Utils.log(f"Generating cutouts for all {filetype.upper()} files for {fieldname}", "info")
+    if filetype.lower() == "clean":
+        directory = Configuration.CLEAN_DIRECTORY
+    elif filetype.lower() == "diff":
+        directory = Configuration.DIFFERENCED_DIRECTORY
+    else:
+        Utils.log(f"Filetype {filetype} is not known.", "info")
+
+    files, dates = Utils.get_all_files_per_field(
+                    directory,
+                    fieldname,
+                    'cutout',
+                    '.fits')
+
+    numfiles = len(files)
+
+    for idx, file in enumerate(tqdm(files)):
+        generate_cutouts_from_filepath(file, filetype="clean")
+        Utils.log(f"{idx} of {numfiles} files complete","info")
+    Utils.log("All done making CLEAN cutouts!", "info")
+
 
 if __name__ == "__main__":
     pass

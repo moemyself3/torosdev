@@ -7,11 +7,13 @@ class Configuration:
     MACHINE = 'm1'
     RAW_FILE_EXTENSION = '.fits'
     FILE_EXTENSION = '.fits'
+    PROCESSORS = 4
+    PARALLEL = True 
 
     # update for different data products
-    FIELD = 'FIELD_2b.022'
-    RA = 52.759
-    DEC = -35.611
+    FIELD = 'FIELD_42.074' #2b.022'
+    RA = 148.198 #52.759
+    DEC =-6.519  #-35.611
 
     # is there a transient you want the light curve for?
     TRANSIENT_LC = 'N'
@@ -20,12 +22,12 @@ class Configuration:
     TRANSIENT_DEC = -21.9258309  # -38.93038375  # -30.269894 #
 
     # steps to skip
-    CLEAN_SKIP = 'Y'
+    CLEAN_SKIP = 'N'
     WRITE_SKY = 'Y'
     MASTER_SKIP = 'Y'
     DIFFERENCE_SKIP = 'Y'
     PHOTOMETRY_SKIP = 'Y'
-    LIGHTCURVE_SKIP = 'N'
+    LIGHTCURVE_SKIP = 'Y'
 
     # how do you want to clean the image?
     SUBTRACT_BIAS = "Y"
@@ -88,8 +90,8 @@ class Configuration:
     CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference/'
 
     # input paths for data etc
-    DATA_DIRECTORY = "/Volumes/datadrive/coldharbor/"
-    RAW_DIRECTORY = "/Volumes/datadrive/coldharbor/raw/"
+    DATA_DIRECTORY = "/Users/mcast/Research/data_directory/" #"/Volumes/datadrive/coldharbor/"
+    RAW_DIRECTORY = "/Users/mcast/Research/CRADLE/coldharbor/raw/" #"/Volumes/datadrive/coldharbor/raw/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
     MASTER_MAIN_DIRECTORY = DATA_DIRECTORY + "master/"
     MASTER_DIRECTORY = DATA_DIRECTORY + "master/" + FIELD + "/"
