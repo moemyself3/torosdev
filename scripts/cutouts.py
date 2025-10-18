@@ -29,8 +29,8 @@ import os
 #       - science cutout
 #       - difference cutout
 
-CUTOUT_WIDTH = 276 # in pixels
-PARALLEL = False
+CUTOUT_WIDTH = Configuration.CUTOUT_WIDTH # in pixels
+PARALLEL = Configuration.PARALLEL
 PROCESSORS = Configuration.PROCESSORS
 
 class Field:
@@ -75,7 +75,7 @@ def single_cutout_from_filepath(filepath, position, output_dir, galaxy_id):
         datetimeinfo = datetimeinfo.replace(":", "")
         cutout_name = "gp_"+galaxy_id+"_"+datetimeinfo+Configuration.FILE_EXTENSION
         cutout_filename = cutout_path + "/" + cutout_name
-        Utils.log(f"Cutout filename: {cutout_filename}", "info")
+        if not PARALLEL: Utils.log(f"Cutout filename: {cutout_filename}", "info")
         cutout_hdu = fits.PrimaryHDU(data=hdu.data, header=hdu.header)
         if not os.path.isfile(cutout_filename):
             try:
@@ -85,10 +85,9 @@ def single_cutout_from_filepath(filepath, position, output_dir, galaxy_id):
                 cutout_hdu.header.update(cutout.wcs.to_header())
                 cutout_hdu.writeto(cutout_filename)
             except NoOverlapError:
-                Utils.log(f"No Overlap!! Skipping.", "info")
+                if not PARALLEL: Utils.log(f"No Overlap!! Skipping.", "info")
         else:
             Utils.log(f"Cutout {cutout_filename} already exists. Skipping...", "info")
-
 
 
 def generate_master_cutouts():
@@ -193,6 +192,8 @@ def generate_all_cutouts_per_field(filetype="clean"):
         directory = Configuration.CLEAN_DIRECTORY
     elif filetype.lower() == "diff":
         directory = Configuration.DIFFERENCED_DIRECTORY
+    elif filetype.lower() == "master":
+        directory = Configuration.MASTER_DIRECTORY
     else:
         Utils.log(f"Filetype {filetype} is not known.", "info")
 

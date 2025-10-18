@@ -3,6 +3,7 @@ from scripts.lightcurves import Lightcurves
 from scripts.clean import Clean
 from scripts.master import Master
 from scripts.difference import BigDiff
+from scripts.cutouts import generate_all_cutouts_per_field
 from config import Configuration
 
 if __name__ == "__main__":
@@ -37,4 +38,9 @@ if __name__ == "__main__":
         Lightcurves.mk_raw_lightcurves()
     else:
         Utils.log("Skipping making raw light curves.", "info")
+    
+    if Configuration.CUTOUT_SKIP == 'N':
+        generate_all_cutouts_per_field()
+    else:
+        Utils.log("Skipping cutout generatation.", "info")
     Utils.log("All done! See ya later, alligator.", "info")
