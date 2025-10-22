@@ -3,6 +3,8 @@ from libraries.utils import Utils
 from libraries.preprocessing import Preprocessing
 from config import Configuration
 import os
+from multiprocessing import Pool
+from itertools import repeat
 import numpy as np
 from astropy.io import fits
 from photutils.aperture import CircularAperture
@@ -24,11 +26,22 @@ matplotlib.use("TkAgg")
 pil_logger = logging.getLogger('PIL')
 pil_logger.setLevel(logging.INFO)
 
+def _parallel_difference_task(file_path, star_list, parallel=True):
+    Utils.log("started parallel process: "+file_path , "debug")
+    fin_nme = Preprocessing.mk_nme(file_path, 'Y', 'N', 'N', 'N', 'N')
+
+    if os.path.isfile(fin_nme) == 1:
+        Utils.log("File " + file_path + " found. Skipping...", "info")
+
+    # check to see if the differenced file already exists
+    if os.path.isfile(fin_nme) == 0:
+        Utils.log("Working to difference file " + file_path + ".", "info")
+        BigDiff.diff_img(star_list, file_path, fin_nme, parallel=parallel)
 
 class BigDiff:
 
     @staticmethod
-    def difference_images():
+    def difference_images(parallel=Configuration.PARALLEL):
         """ This function will generate the master frame and generates position files, or if a single frame is chosen,
         then only the position file are generated.
 
@@ -51,27 +64,36 @@ class BigDiff:
                                 header=0)
 
         # prepare the oisdifference.c file for differencing
-        BigDiff.prep_ois(master, master_header)
+        BigDiff.prep_ois(master, master_header, parallel=parallel)
 
         # begin with the algorithm to difference the images
-        for ii in range(0, nfiles):
+        if not parallel:
+            for file_path in files:
+                fin_nme = Preprocessing.mk_nme(file_path, 'Y', 'N', 'N', 'N', 'N')
 
-            fin_nme = Preprocessing.mk_nme(files[ii], 'Y', 'N', 'N', 'N', 'N')
+                if os.path.isfile(fin_nme) == 1:
+                    Utils.log("File " + file_path + " found. Skipping...", "info")
 
-            if os.path.isfile(fin_nme) == 1:
-                Utils.log("File " + fin_nme + " found. Skipping...", "info")
+                # check to see if the differenced file already exists
+                if os.path.isfile(fin_nme) == 0:
+                    Utils.log("Working to difference file " + file_path + ".", "info")
+                    BigDiff.diff_img(star_list, file_path, fin_nme)
+        else:
+            processes = Configuration.PROCESSORS
 
-            # check to see if the differenced file already exists
-            if os.path.isfile(fin_nme) == 0:
-                Utils.log("Working to difference file " + files[ii] + ".", "info")
-                BigDiff.diff_img(star_list, files[ii], fin_nme)
+            Utils.log("Using parallel process with "+ str(processes) + "processes.","info")
+            with Pool(processes=processes) as pool:
+                pool.starmap(
+                        _parallel_difference_task,
+                        zip(files, repeat(star_list))
+                        )
 
-        Utils.log("Differencing complete for " + Configuration.FIELD + ".", "info")
+            Utils.log("Differencing complete for " + Configuration.FIELD + ".", "info")
 
         return
 
     @staticmethod
-    def diff_img(star_list, file, out_name):
+    def diff_img(star_list, file, out_name, parallel=False):
         """ This function will check for and determine the reference stars. It will then difference the image.
 
         :parameter file - The file name to difference.
@@ -157,18 +179,26 @@ class BigDiff:
 
         org_header['ALIGNED'] = 'Y'
 
-        fits.writeto(Configuration.CODE_DIFFERENCE_DIRECTORY + 'img.fits',
+        if not parallel:
+            img_name = "img.fits"
+        else:
+            img_name = os.path.basename(file)
+
+        fits.writeto(Configuration.CODE_DIFFERENCE_DIRECTORY + img_name,
                        img_align, org_header, overwrite=True)
 
         # get the kernel stars for the subtraction
-        nstars = BigDiff.find_subtraction_stars_img(img_align, star_list)
+        if parallel:
+            nstars = BigDiff.find_subtraction_stars_img(img_align, star_list, file, parallel)
+        else:
+            nstars = BigDiff.find_subtraction_stars_img(img_align, star_list)
 
-        BigDiff.ois_difference(out_name, org_header, nstars)
+        BigDiff.ois_difference(file, out_name, org_header, nstars, parallel=parallel)
 
         return
 
     @staticmethod
-    def ois_difference(out_name, header, nstars):
+    def ois_difference(filepath, out_name, header, nstars, parallel=False):
         """ This function will run the c code oisdifference
 
         :parameter out_name - The file name for the difference file
@@ -186,11 +216,27 @@ class BigDiff:
         # change to the directory
         os.chdir(Configuration.CODE_DIFFERENCE_DIRECTORY)
 
-        # run the c code
-        shh = os.system('./a.out')
+        if parallel:
+            file_name = os.path.basename(filepath) # get the filename without the path
+            differenced_img_name = os.path.basename(out_name)
+            ref = 'ref.txt'
+            refstars = os.path.splitext(file_name)[0] # splits the ext from filename
+            refstars = refstars + '.txt' # add the .txt ext
 
+            command = './parallel_ois.out ' +\
+                    file_name + ' ' +\
+                    differenced_img_name + ' ' +\
+                    ref + ' ' + refstars
+        else:
+            differenced_img_name = 'dimg.fits'
+            command = './a.out'
+
+        Utils.log(f"system: {command}\n\n", "debug")
+        # run the c code
+        shh = os.system(command)
+        Utils.log(f"shh: {shh}\n\n", "debug")
         # update the header file
-        dimg, diff_header = fits.getdata('dimg.fits', header=True)
+        dimg, diff_header = fits.getdata(differenced_img_name, header=True)
         header['diffed'] = 'Y'
         header['nstars'] = nstars
 
@@ -202,11 +248,11 @@ class BigDiff:
         #### END LIKELY REMOVE
 
         # update the image with the new file header
-        fits.writeto('dimg.fits', dimg, header, overwrite=True)
+        fits.writeto(differenced_img_name, dimg, header, overwrite=True)
 
         # move the differenced file to the difference directory
         #os.system('mv dimg.fits ' + out_name)
-        shutil.move('dimg.fits', out_name) 
+        shutil.move(differenced_img_name, out_name)
 
         # change back to the working directory
         os.chdir(Configuration.WORKING_DIRECTORY)
@@ -216,7 +262,7 @@ class BigDiff:
         return
 
     @staticmethod
-    def prep_ois(master, master_header):
+    def prep_ois(master, master_header, parallel=False):
         """ This function will prepare the files necessary for the ois difference.
 
         :parameter master - The master image for differencing
@@ -225,10 +271,23 @@ class BigDiff:
         :return - Nothing is returned but the necessary text files are written,
                     and the code is compiled for differencing
         """
+        codebase = 'oisdifference.c'
+        exec_name = 'a.out'
+
+        if parallel:
+            codebase = 'cli_' + codebase
+            exec_name = 'parallel_ois.out'
+
         # compile the oisdifference.c code
-        shutil.copy2('oisdifference.c',  Configuration.CODE_DIFFERENCE_DIRECTORY)
+        shutil.copy2(codebase,  Configuration.CODE_DIFFERENCE_DIRECTORY)
         os.chdir(Configuration.CODE_DIFFERENCE_DIRECTORY)
-        os.system('gcc `pkg-config --cflags --libs cfitsio` oisdifference.c')
+
+        if os.sys.platform == 'darwin':
+            system_command = 'gcc `pkg-config --cflags --libs cfitsio` '+ codebase + ' -o ' + exec_name
+        else:
+            system_command = 'gcc ' + codebase + ' -lcfitsio -lm -o ' + exec_name
+
+        os.system(system_command)
         os.chdir(Configuration.WORKING_DIRECTORY)
 
         # write the new master file
@@ -241,7 +300,7 @@ class BigDiff:
         return
 
     @staticmethod
-    def find_subtraction_stars_img(img, star_list):
+    def find_subtraction_stars_img(img, star_list, filename=None, parallel=False):
         """ This function will find the subtraction stars to use for the differencing, they will be the same stars for
         every frame. This will help in detrending later.
 
@@ -311,8 +370,18 @@ class BigDiff:
         Utils.write_txt(Configuration.CODE_DIFFERENCE_DIRECTORY + 'parms.txt', 'w', "%1d %1d %1d %4d\n" %
                         (Configuration.STMP, Configuration.KRNL, Configuration.ORDR, nstars))
 
+        if not parallel:
+            refstars = 'refstars.txt'
+        else:
+            refstars = os.path.basename(filename) # get the filename without the path
+            refstars = os.path.splitext(refstars)[0] # splits the ext from filename
+            refstars = refstars + '.txt' # add the .txt. ext
+
         # export the differencing stars
         diff_list[['x', 'y']].astype(int).to_csv(Configuration.CODE_DIFFERENCE_DIRECTORY +
-                                                 'refstars.txt', index=0, header=0, sep=" ")
+                                                 refstars, index=0, header=0, sep=" ")
 
         return nstars
+
+if __name__ == "__main__":
+    pass

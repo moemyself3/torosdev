@@ -9,7 +9,7 @@ from config import Configuration
 if __name__ == "__main__":
     # do necessary prep work such as making output directories
     Utils.create_directories(Configuration.DIRECTORIES)
-    
+
     # do the necessary preprocessing of the images
     if Configuration.CLEAN_SKIP == 'N':
         if Configuration.PARALLEL:
@@ -18,27 +18,27 @@ if __name__ == "__main__":
             Clean.clean_images()
     else:
         Utils.log("Skipping image cleaning.", "info")
-    
+
     if Configuration.MASTER_SKIP == 'N':
         master, star_list = Master.pull_master()
     else:
         Utils.log("Skipping master frame generation.", "info")
-    
+
     if Configuration.DIFFERENCE_SKIP == 'N':
         BigDiff.difference_images()
     else:
         Utils.log("Skipping image differencing.", "info")
-    
+
     if Configuration.PHOTOMETRY_SKIP == 'N':
         Lightcurves.generate_flux_files()
     else:
         Utils.log("Skipping photometry.", "info")
-    
+
     if Configuration.LIGHTCURVE_SKIP == 'N':
         Lightcurves.mk_raw_lightcurves()
     else:
         Utils.log("Skipping making raw light curves.", "info")
-    
+
     if Configuration.CUTOUT_SKIP == 'N':
         generate_all_cutouts_per_field()
     else:
