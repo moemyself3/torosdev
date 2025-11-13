@@ -231,10 +231,9 @@ class BigDiff:
             differenced_img_name = 'dimg.fits'
             command = './a.out'
 
-        Utils.log(f"system: {command}\n\n", "debug")
         # run the c code
         shh = os.system(command)
-        Utils.log(f"shh: {shh}\n\n", "debug")
+
         # update the header file
         dimg, diff_header = fits.getdata(differenced_img_name, header=True)
         header['diffed'] = 'Y'
@@ -253,6 +252,10 @@ class BigDiff:
         # move the differenced file to the difference directory
         #os.system('mv dimg.fits ' + out_name)
         shutil.move(differenced_img_name, out_name)
+
+        # clean up 
+        os.remove(file_name)
+        os.remove(refstars)
 
         # change back to the working directory
         os.chdir(Configuration.WORKING_DIRECTORY)

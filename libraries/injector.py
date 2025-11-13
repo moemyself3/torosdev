@@ -1,6 +1,7 @@
 #This code is adated from Reyes, A. (2024). On the Development of a Software Pipeline for Automatic Detection of Transients With the Transient Optical Robotic Observatory of the South [Master's thesis, The University of Texas Rio Grande Valley]. ScholarWorks @ UTRGV. https://scholarworks.utrgv.edu/etd/1607
 
 from config import Configuration
+from libraries.utils import Utils
 import os
 import copy
 import numpy as np
@@ -81,7 +82,6 @@ class Injector:
                 if type(self.hdul[i].data) != type(None):
                     self.image = self.hdul[i]
                     break
-        print('extract xy')
         # Extract sources x y values
         #peaks_table = find_peaks(self.image.data, threshold=self.threshold)
         #weaks_table = find_peaks(self.image.data, threshold=int(self.threshold*0.4))
@@ -106,7 +106,6 @@ class Injector:
         weaks_table['x_peak'] = weaks_table['x_peak'].astype(int)
         weaks_table['y_peak'] = weaks_table['y_peak'].astype(int)
 
-        print('remove peaks_table sources from weaks_table')
         # remove peaks_table sources from weaks_table
         weaks_table = setdiff(weaks_table, peaks_table, keys=['x_peak','y_peak'])
 
@@ -116,8 +115,6 @@ class Injector:
         peaks_xy_array = peaks_table['x_peak', 'y_peak'].to_pandas().to_numpy().astype(int)
         weaks_xy_array = weaks_table['x_peak', 'y_peak'].to_pandas().to_numpy().astype(int)
 
-        print('calculate cdist')
-
         chunk_size = 10000
         nchunks = len(peaks_xy_array) // chunk_size
         if nchunks == 0:
@@ -125,7 +122,7 @@ class Injector:
 
         peaks_xy_chunks =np.array_split(peaks_xy_array, nchunks)
         for idx, peaks_xy_chunk in enumerate(peaks_xy_chunks):
-            print(f'chunk: {idx}')
+            Utils.log(f'chunking peaks: {idx}', 'info')
             if idx == 0:
                 distances = cdist(peaks_xy_chunk, weaks_xy_array)
             else:
@@ -134,17 +131,9 @@ class Injector:
         peaks_min_distances = np.min(distances, axis=1)
         peaks_table['min_distances'] = peaks_min_distances
         lonely_mask = peaks_min_distances > self.cutout_size
-        #for p in range(len(peaks_table)):
-        #    if verb:#& (p % 50 == 0):
-        #        print(p+1, "of", len(peaks_table))
-        #    lonely_mask.append(True)
-        #    for w in weaks_table:
-        #        if np.sqrt((peaks_table[p]['x_peak']-w['x_peak'])**2 +
-        #                (peaks_table[p]['y_peak']-w['y_peak'])**2) < self.cutout_size:
-        #            lonely_mask[p] = False
 
         lonely_peaks_table = peaks_table[lonely_mask]
-        # lonely_peaks_table = peaks_table
+
         del peaks_table, weaks_table, peaks_xy_array, weaks_xy_array, distances, peaks_min_distances
 
         # remove lonely peaks less than the cutout_size to avoid contamination
@@ -213,7 +202,7 @@ class Injector:
         """
 
         if self.fitted_stars == None:
-            print('No sources found. Run make psf first.')
+            Utils.log('No sources found. Run make psf first.','info')
 
         else:
             fig, ax = plt.subplots(nrows=5, ncols=5, figsize=(35,35), squeeze=True)
@@ -278,7 +267,7 @@ class Injector:
 
         if type(image) == type(None):
             image = copy.deepcopy(self.image.data)
-            print('Using input fits image data')
+            Utils.log('Using input fits image data', 'info')
         # else:
         #     image = image
 
@@ -286,5 +275,4 @@ class Injector:
         scalar = target_counts / self.psf_stats.sum
 
         sim_source = self.epsf_resized.data * scalar
-        print(f"target_counts: {target_counts} \n scalar: {scalar}\n sim_source: {sim_source} ")
         return patch(position, image, sim_source)
