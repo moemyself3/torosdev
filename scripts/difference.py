@@ -253,9 +253,10 @@ class BigDiff:
         #os.system('mv dimg.fits ' + out_name)
         shutil.move(differenced_img_name, out_name)
 
-        # clean up 
-        os.remove(file_name)
-        os.remove(refstars)
+        # clean up
+        if parallel:
+            os.remove(file_name)
+            os.remove(refstars)
 
         # change back to the working directory
         os.chdir(Configuration.WORKING_DIRECTORY)
