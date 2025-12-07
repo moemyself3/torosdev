@@ -4,6 +4,7 @@ from config import Configuration
 from libraries.utils import Utils
 import os
 import copy
+from math import ceil
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib import cm
@@ -57,42 +58,73 @@ class Injector:
         PSF model resized to match cutout_size
     """
 
-    def __init__(self, image, threshold=100, cutout_size=int(Configuration.FWHM)*2+1) -> None:
+    def __init__(self, image, threshold=100, 
+                 cutout_size = None,
+                 epsf_resized = None
+                 ) -> None:
 
         self.image = image
-        self.threshold = threshold
-        self.cutout_size = cutout_size
 
-        self.epsf = None
-        self.epsf_resized = None
-        self.fitted_stars = None
-
-    def make_epsf(self, psf_stats=True, verb=True):
-        """Generates effective PSF from image using photutils.psf.EPSFBuilder()
-
-        Arguments:
-        ----------
-        psf_stats : `bool`, default=True
-            computes the magnitude of the psf model using photutils.psf.ApertureStats() for later injection
-        """
-
-        if type(self.image) == str and os.path.isfile(self.image):
+        # load image
+        try:
             self.hdul = fits.open(self.image, mode='readonly')
             for i in range(10):
                 if type(self.hdul[i].data) != type(None):
                     self.image = self.hdul[i]
                     break
+        except FileNotFoundError as e:
+            Utils.log(f"{e}", "error")
+
+        self.threshold = threshold
+
+        if cutout_size is None:
+            cutout_size = ceil(Configuration.APER_SIZE*2.5)
+
+        if cutout_size % 2 == 0:
+            # if even
+            cutout_size += 1 # make odd
+
+        self.cutout_size = cutout_size
+        self.epsf = None
+        self.epsf_resized = epsf_resized
+        self.fitted_stars = None
+        self.lonely_peaks_table = None
+        self.image_median = None
+
+    def make_candidate_starlist(self):
+        """Generates a candidate list of stars to use to make epsf.
+
+        Arguments:
+        ----------
+        None
+
+        Returns:
+        --------
+        lonely_peaks_table
+
+        """
+
         # Extract sources x y values
-        #peaks_table = find_peaks(self.image.data, threshold=self.threshold)
-        #weaks_table = find_peaks(self.image.data, threshold=int(self.threshold*0.4))
-        #peaks_table['peak_value'].info.format = '%.8g'
-        #weaks_table['peak_value'].info.format = '%.8g'
-        peaks_DAOStarFinder = DAOStarFinder(fwhm=Configuration.FWHM, threshold=self.threshold, exclude_border=True, peakmax=45000)
-        weaks_DAOStarFinder = DAOStarFinder(fwhm=Configuration.FWHM, threshold=self.threshold*0.4, exclude_border=True, peakmax=45000)
-        mean, median, std = sigma_clipped_stats(self.image.data)
+        peaks_DAOStarFinder = DAOStarFinder(
+                                fwhm=Configuration.FWHM,
+                                threshold=self.threshold,
+                                exclude_border=True,
+                                peakmax=Configuration.PEAKMAX)
+        weaks_DAOStarFinder = DAOStarFinder(
+                                fwhm=Configuration.FWHM, 
+                                threshold=self.threshold*0.4,
+                                exclude_border=True,
+                                peakmax=Configuration.PEAKMAX)
+        Utils.log("start sigma_clipped_stats", "debug")
+        mean, median, std = sigma_clipped_stats(self.image.data,
+                                                cenfunc='median',
+                                                stdfunc='std')
+        self.image_median = median
         median_subtracted_img = self.image.data - median
+        Utils.log("Start peaks weaks DAOStarFinder", "debug")
         peaks_table = peaks_DAOStarFinder(median_subtracted_img)
         weaks_table = weaks_DAOStarFinder(median_subtracted_img)
+        Utils.log("End peaks weaks DAOStarFinder", "debug")
 
         # keep only "real" stars
         peaks_table = peaks_table[(peaks_table['flux'] > 0) ]#& (peaks_table['sharpness'] < 0.7)]
@@ -122,10 +154,10 @@ class Injector:
 
         peaks_xy_chunks =np.array_split(peaks_xy_array, nchunks)
         for idx, peaks_xy_chunk in enumerate(peaks_xy_chunks):
-            Utils.log(f'chunking peaks: {idx}', 'info')
             if idx == 0:
                 distances = cdist(peaks_xy_chunk, weaks_xy_array)
             else:
+                Utils.log(f'chunking peaks distance calculation: {idx}', 'info')
                 np.append(distances, cdist(peaks_xy_chunk, weaks_xy_array))
 
         peaks_min_distances = np.min(distances, axis=1)
@@ -142,6 +174,24 @@ class Injector:
         distances, indices = tree.query(lonely_xy_array, k=2)
         min_distances_kdtree = distances[:, 1]
         lonely_peaks_table =  lonely_peaks_table[ (min_distances_kdtree > self.cutout_size) ]
+        # add image_median into metadata of table
+        lonely_peaks_table.meta['image_median'] = self.image_median
+        self.lonely_peaks_table = lonely_peaks_table
+        return lonely_peaks_table
+
+    def make_epsf(self, psf_stats=True, verb=True):
+        """Generates effective PSF from image using photutils.psf.EPSFBuilder()
+
+        Arguments:
+        ----------
+        psf_stats : `bool`, default=True
+            computes the magnitude of the psf model using photutils.psf.ApertureStats() for later injection
+        """
+        Utils.log("Making EPSF.", "info")
+        if self.lonely_peaks_table is None:
+            lonely_peaks_table = self.make_candidate_starlist()
+        else:
+            lonely_peaks_table = self.lonely_peaks_table
 
         # Vignet mask
         hcutout_size = int(self.cutout_size/2)
@@ -169,18 +219,22 @@ class Injector:
         star_table = star_table[bp_mask]
 
         # Extract stars
-        nddata = NDData(median_subtracted_img)#self.image.data)
+        median_subtracted_img = self.image.data - self.image_median
+        nddata = NDData(median_subtracted_img)
         stars = extract_stars(nddata, star_table, size=self.cutout_size)
 
         # Initiate EPSFBuilder
-        epsf_builder = EPSFBuilder(oversampling=4, maxiters=3, progress_bar=False,
+        Utils.log("Starting EPSFBuilder.", "info")
+        epsf_builder = EPSFBuilder(oversampling=4, maxiters=5, progress_bar=False,
                                                 smoothing_kernel='quadratic')
         self.epsf, self.fitted_stars = epsf_builder(stars)
         self.stars = stars
 
         self.epsf_resized = resize_psf(self.epsf.data, 1, len(self.epsf.data)/self.cutout_size)
+        self.epsf_resized[self.epsf_resized < 0] = 0
 
         if psf_stats == True:
+            Utils.log("Calculating PSF stats", "info")
             psf_side = self.epsf_resized.shape[0]
             psf_aperture = CircularAperture((int(psf_side/2),int(psf_side/2)), r=psf_side*.5)
             psf_stats = ApertureStats(self.epsf_resized.data, psf_aperture)
@@ -188,9 +242,18 @@ class Injector:
             # Improved radius using fwhm:
             self.psf_aperture = CircularAperture((int(psf_side/2),int(psf_side/2)), r=psf_fwhm*1.5)
             self.psf_stats = ApertureStats(self.epsf_resized.data, self.psf_aperture)
-            self.psf_magnitude = -2.5*np.log10(self.psf_stats.sum/self.image.header['EXPTIME'])
-        return lonely_peaks_table
-        # return self.epsf, self.epsf_resized, self.fitted_stars
+            #self.psf_magnitude = -2.5*np.log10(self.psf_stats.sum/self.image.header['EXPTIME'])
+            self.psf_magnitude = -2.5*np.log10(self.psf_stats.sum)
+
+    def load_epsf(self, epsf_resized):
+            self.epsf_resized = epsf_resized
+            psf_side = self.epsf_resized.shape[0]
+            psf_aperture = CircularAperture((int(psf_side/2),int(psf_side/2)), r=psf_side*.5)
+            psf_stats = ApertureStats(self.epsf_resized.data, psf_aperture)
+            psf_fwhm = psf_stats.fwhm.to_value()
+            self.psf_aperture = CircularAperture((int(psf_side/2),int(psf_side/2)), r=psf_fwhm*1.5)
+            self.psf_stats = ApertureStats(self.epsf_resized.data, self.psf_aperture)
+            self.psf_magnitude = -2.5*np.log10(self.psf_stats.sum)
 
     def inspect_stars(self, title=''):
         """Plot stars used for modeling EPSF
@@ -271,7 +334,8 @@ class Injector:
         # else:
         #     image = image
 
-        target_counts = self.image.header['EXPTIME']*10**(-magnitude/2.5)
+        #target_counts = self.image.header['EXPTIME']*10**(-magnitude/2.5)
+        target_counts = 10**(-magnitude/2.5)
         scalar = target_counts / self.psf_stats.sum
 
         sim_source = self.epsf_resized.data * scalar
