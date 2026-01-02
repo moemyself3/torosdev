@@ -11,9 +11,21 @@ class Configuration:
     PARALLEL = True 
 
     # update for different data products
-    FIELD = 'FIELD_36.007' #'SN2024vcn'#'FIELD_42.074' #2b.022'
-    RA = 10.189#35.5456957075#148.198 #52.759
-    DEC = -21.697 #-20.3891718846#-6.519  #-35.611
+    FIELD = 'SN2024vcn'
+    #'FIELD_36.007' 
+    #'SN2024vcn'
+    #'FIELD_42.074' 
+    #'FIELD_2b.022'
+    RA = 35.5456957075
+    #10.189
+    #35.5456957075
+    #148.198
+    #52.759
+    DEC = -20.3891718846
+    #-21.697 
+    #-20.3891718846
+    #-6.519  
+    #-35.611
 
     # is there a transient you want the light curve for?
     TRANSIENT_LC = 'N'

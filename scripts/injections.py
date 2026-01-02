@@ -4,6 +4,7 @@ ePSF of the image supplied.
 
 from libraries.utils import Utils
 from libraries.injector import Injector
+from scripts.difference import BigDiff
 from config import Configuration
 
 from astropy.io import fits
@@ -36,8 +37,8 @@ def create_injection_images() -> None:
         output_dirs.append(Configuration.EPSF_DIRECTORY)
         output_dirs.append(Configuration.EPSF_MODELS_DIRECTORY)
         output_dirs.append(Configuration.EPSF_CANDIDATES_DIRECTORY)
-        output_dirs.append(Configuration.EPSF_MODELS_DIRECTORY      + date )
-        output_dirs.append(Configuration.EPSF_CANDIDATES_DIRECTORY  + date )
+        output_dirs.append(Configuration.EPSF_MODELS_DIRECTORY      + date)
+        output_dirs.append(Configuration.EPSF_CANDIDATES_DIRECTORY  + date)
         output_dirs.append(Configuration.INJECTED_CLEAN_DIRECTORY   + date)
         output_dirs.append(Configuration.INJECTED_DIFF_DIRECTORY    + date)
         output_dirs.append(Configuration.INJECTED_FLUX_DIRECTORY    + date)
@@ -78,7 +79,11 @@ def create_injection_images() -> None:
         injected_filepath = file.replace(
                                 Configuration.CLEAN_DIRECTORY,
                                 Configuration.INJECTED_CLEAN_DIRECTORY)
-        injected_filepath = injected_filepath.replace(".fits", "_injected.fits")
+        injected_dir, injected_filename = os.path.split(injected_filepath)
+        injected_filename = os.path.splitext(injected_filename)[0] + 'i' \
+                            + Configuration.FILE_EXTENSION
+        injected_filepath = injected_dir + os.path.sep \
+                            + injected_filename
 
         if os.path.isfile(injected_filepath):
             Utils.log(
@@ -300,16 +305,23 @@ def generate_random_source_magnitudes(
     magnitudes = rng.uniform(upper_magnitude, lower_magnitude, num_sources)
     return magnitudes
 
+def update_config_path_to_injected_dir() -> None:
+    Utils.log("Updating DATA_DIRECTORY and CLEAN_DIRECTORY.", "info")
+    Configuration.DATA_DIRECTORY = Configuration.INJECTED_DATA_DIRECTORY
+    Configuration.CLEAN_DIRECTORY = Configuration.DATA_DIRECTORY + "clean/"
+    Configuration.DIFFERENCED_DIRECTORY = Configuration.DATA_DIRECTORY + "diff/"
+
 def difference_injected_images() -> None:
     # Similar process used in difference.py difference_images
     # This uses injected clean images. 
     # difference_images uses the default clean dir. need to use injected/clean
     Utils.log("Differencing injeced images...", "info")
-    ...
+    BigDiff.difference_images()
 
 def main() -> None:
     make_difference_image_catalog()
     create_injection_images()
+    update_config_path_to_injected_dir()
     difference_injected_images()
 
 

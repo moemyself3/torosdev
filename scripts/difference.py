@@ -47,21 +47,21 @@ class BigDiff:
 
         :return - Nothing is returned, however, the images are differenced
         """
-
         # get the image list to difference
         files, dates = Utils.get_all_files_per_field(Configuration.CLEAN_DIRECTORY,
                                                      Configuration.FIELD,
                                                      'clean',
                                                      Configuration.FILE_EXTENSION)
         nfiles = len(files)
-
         # read in the master frame information
         master, master_header = fits.getdata(Configuration.MASTER_DIRECTORY +
-                                             Configuration.FIELD +'_master' + Configuration.FILE_EXTENSION, header=True)
+                                             Configuration.FIELD +'_master' + 
+                                             Configuration.FILE_EXTENSION, header=True)
 
         # read in the star list for processing
-        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + Configuration.FIELD + '_star_list.txt', delimiter=' ',
-                                header=0)
+        star_list = pd.read_csv(Configuration.MASTER_DIRECTORY + 
+                                Configuration.FIELD +
+                                '_star_list.txt', delimiter=' ', header=0)
 
         # prepare the oisdifference.c file for differencing
         BigDiff.prep_ois(master, master_header, parallel=parallel)
@@ -81,7 +81,7 @@ class BigDiff:
         else:
             processes = Configuration.PROCESSORS
 
-            Utils.log("Using parallel process with "+ str(processes) + "processes.","info")
+            Utils.log("Using parallel process with "+ str(processes) + " processes.","info")
             with Pool(processes=processes) as pool:
                 pool.starmap(
                         _parallel_difference_task,
@@ -234,25 +234,27 @@ class BigDiff:
         # run the c code
         shh = os.system(command)
 
-        # update the header file
-        dimg, diff_header = fits.getdata(differenced_img_name, header=True)
-        header['diffed'] = 'Y'
-        header['nstars'] = nstars
+        try:
+            # update the header file
+            dimg, diff_header = fits.getdata(differenced_img_name, header=True)
+            header['diffed'] = 'Y'
+            header['nstars'] = nstars
 
-        # now mask the missing master frame parts #### THIS WILL CHANGE PER FIELD!!!! LIKELY YOU SHOULD REMOVE#####
-        #dimg[0:490, :] = 0
-        #dimg[10045:-1, :] = 0
-        #dimg[:, 0:530] = 0
-        #dimg[:, 10465:-1] = 0
-        #### END LIKELY REMOVE
+            # now mask the missing master frame parts #### THIS WILL CHANGE PER FIELD!!!! LIKELY YOU SHOULD REMOVE#####
+            #dimg[0:490, :] = 0
+            #dimg[10045:-1, :] = 0
+            #dimg[:, 0:530] = 0
+            #dimg[:, 10465:-1] = 0
+            #### END LIKELY REMOVE
 
-        # update the image with the new file header
-        fits.writeto(differenced_img_name, dimg, header, overwrite=True)
+            # update the image with the new file header
+            fits.writeto(differenced_img_name, dimg, header, overwrite=True)
 
-        # move the differenced file to the difference directory
-        #os.system('mv dimg.fits ' + out_name)
-        shutil.move(differenced_img_name, out_name)
-
+            # move the differenced file to the difference directory
+            #os.system('mv dimg.fits ' + out_name)
+            shutil.move(differenced_img_name, out_name)
+        except FileNotFoundError as e:
+            Utils.log("Error FileNotFound: {e}", "info")
         # clean up
         if parallel:
             os.remove(file_name)
@@ -300,7 +302,7 @@ class BigDiff:
         # prepare the text files
         Utils.write_txt(Configuration.CODE_DIFFERENCE_DIRECTORY + 'ref.txt', 'w', "ref.fits")
         Utils.write_txt(Configuration.CODE_DIFFERENCE_DIRECTORY + 'img.txt', 'w', "img.fits")
-
+        Utils.log("Prep ois complete.", "info")
         return
 
     @staticmethod
