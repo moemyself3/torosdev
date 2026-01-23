@@ -261,7 +261,8 @@ class BigDiff:
             os.remove(refstars)
 
         # change back to the working directory
-        os.chdir(Configuration.WORKING_DIRECTORY)
+        #os.chdir(Configuration.WORKING_DIRECTORY)
+        os.chdir(Configuration.PROJECT_DIRECTORY)
 
         # get the photometry from the differenced image
         Utils.log('Image subtraction complete.', 'info')
@@ -284,17 +285,19 @@ class BigDiff:
             codebase = 'cli_' + codebase
             exec_name = 'parallel_ois.out'
 
-        # compile the oisdifference.c code
-        shutil.copy2(codebase,  Configuration.CODE_DIFFERENCE_DIRECTORY)
-        os.chdir(Configuration.CODE_DIFFERENCE_DIRECTORY)
+        if not os.path.isfile(Configuration.CODE_DIFFERENCE_DIRECTORY+exec_name):
+            # compile the oisdifference.c code
+            shutil.copy2(codebase,  Configuration.CODE_DIFFERENCE_DIRECTORY)
+            os.chdir(Configuration.CODE_DIFFERENCE_DIRECTORY)
 
-        if os.sys.platform == 'darwin':
-            system_command = 'gcc `pkg-config --cflags --libs cfitsio` '+ codebase + ' -o ' + exec_name
-        else:
-            system_command = 'gcc ' + codebase + ' -lcfitsio -lm -o ' + exec_name
+            if os.sys.platform == 'darwin':
+                system_command = 'gcc `pkg-config --cflags --libs cfitsio` '+ codebase + ' -o ' + exec_name
+            else:
+                system_command = 'gcc ' + codebase + ' -lcfitsio -lm -o ' + exec_name
 
-        os.system(system_command)
-        os.chdir(Configuration.WORKING_DIRECTORY)
+            os.system(system_command)
+            #os.chdir(Configuration.WORKING_DIRECTORY)
+            os.chdir(Configuration.PROJECT_DIRECTORY)
 
         # write the new master file
         fits.writeto(Configuration.CODE_DIFFERENCE_DIRECTORY + 'ref.fits', master, master_header, overwrite=True)
@@ -313,7 +316,11 @@ class BigDiff:
         """
 
         Utils.log('Finding stars for kernel from the star list.', 'info')
-        diff_list = star_list.copy().reset_index(drop=True)
+        #diff_list = star_list.copy().reset_index(drop=True)
+        # read in the star list for processing
+        diff_list = pd.read_csv(Configuration.MASTER_DIRECTORY + 
+                                Configuration.FIELD +
+                                '_star_list.txt', delimiter=' ', header=0)
 
         ## REMOVE THIS PART FOR NON-47TUC FIELDS!!!!
         # remove stars near 47 Tuc and the small cluster
@@ -350,8 +357,11 @@ class BigDiff:
                                  (diff_list['dmag'] > dmag_minus)].copy().reset_index(drop=True)
 
         # now check for non-crowded stars
-        diff_list['prox'] = diff_list.apply(lambda x: np.sort(np.sqrt((x.xcen - diff_list.xcen) ** 2 +
-                                                                          (x.ycen - diff_list.ycen) ** 2))[1], axis=1)
+        diff_list['prox'] = diff_list.apply(
+                lambda x: (
+                    np.sort(np.sqrt((x.xcen - diff_list.xcen) ** 2 +
+                                    (x.ycen - diff_list.ycen) ** 2))[1]
+                    ), axis=1)
         diff_list = diff_list[diff_list.prox > (2 * Configuration.STMP + 1)].copy().reset_index(drop=True)
 
         # make a magnitude cut

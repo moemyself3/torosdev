@@ -242,6 +242,8 @@ def make_difference_image_catalog() -> None:
 
     # make the output directories for the differenced catalogs
     output_dirs = []
+    output_dirs.append(Configuration.DIFFERENCED_CATALOG_DIRECTORY)
+
     for date in date_dirs:
         output_dirs.append(Configuration.DIFFERENCED_CATALOG_DIRECTORY + date )
         output_dirs.append(
@@ -310,6 +312,7 @@ def update_config_path_to_injected_dir() -> None:
     Configuration.DATA_DIRECTORY = Configuration.INJECTED_DATA_DIRECTORY
     Configuration.CLEAN_DIRECTORY = Configuration.DATA_DIRECTORY + "clean/"
     Configuration.DIFFERENCED_DIRECTORY = Configuration.DATA_DIRECTORY + "diff/"
+    Configuration.DIFFERENCED_CATALOG_DIRECTORY = Configuration.DATA_DIRECTORY + "diff_catalogs/"
 
 def difference_injected_images() -> None:
     # Similar process used in difference.py difference_images

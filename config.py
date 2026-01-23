@@ -11,21 +11,9 @@ class Configuration:
     PARALLEL = True 
 
     # update for different data products
-    FIELD = 'SN2024vcn'
-    #'FIELD_36.007' 
-    #'SN2024vcn'
-    #'FIELD_42.074' 
-    #'FIELD_2b.022'
-    RA = 35.5456957075
-    #10.189
-    #35.5456957075
-    #148.198
-    #52.759
-    DEC = -20.3891718846
-    #-21.697 
-    #-20.3891718846
-    #-6.519  
-    #-35.611
+    FIELD = 'FIELD_36.007'
+    RA  =  10.189
+    DEC = -21.697
 
     # is there a transient you want the light curve for?
     TRANSIENT_LC = 'N'
@@ -34,21 +22,21 @@ class Configuration:
     TRANSIENT_DEC = -21.9258309  # -38.93038375  # -30.269894 #
 
     # steps to skip
-    CLEAN_SKIP = 'Y'
-    WRITE_SKY = 'Y'
-    MASTER_SKIP = 'Y'
+    CLEAN_SKIP      = 'N'
+    WRITE_SKY       = 'N'
+    MASTER_SKIP     = 'N'
     DIFFERENCE_SKIP = 'N'
-    PHOTOMETRY_SKIP = 'Y'
-    LIGHTCURVE_SKIP = 'Y'
-    CUTOUT_SKIP = 'Y'
+    PHOTOMETRY_SKIP = 'N'
+    LIGHTCURVE_SKIP = 'N'
+    CUTOUT_SKIP     = 'Y'
 
     # how do you want to clean the image?
-    SUBTRACT_BIAS = "Y"
-    SUBTRACT_DARK = "Y"
-    DIVIDE_FLAT = "Y"
-    CLIP_IMAGE = "Y"
-    SUBTRACT_SKY = "Y"
-    PLATE_SOLVE = "Y"
+    SUBTRACT_BIAS   = "Y"
+    SUBTRACT_DARK   = "Y"
+    DIVIDE_FLAT     = "Y"
+    CLIP_IMAGE      = "Y"
+    SUBTRACT_SKY    = "Y"
+    PLATE_SOLVE     = "Y"
     PLATE_SOLVE_METHOD = "astrometry_net"
     SOURCE_EXTRACTOR_PATH = "/opt/homebrew/bin/sex"
 
@@ -100,6 +88,8 @@ class Configuration:
     # injection configs
     UPPER_MAG_LIMIT = 12 # Catalog G mag (Gaia)
     MAG_OFFSET = 25 # Instrumental mag + MAG_OFFSET = Catalog mag
+    # Project directory
+    PROJECT_DIRECTORY = "/Users/mcast/Research/toros/ryan/torosdev/"
 
     # output paths for logging, temporary files, figures etc
     WORKING_DIRECTORY = "/Users/mcast/Research/toros/ryan/working_directory/"

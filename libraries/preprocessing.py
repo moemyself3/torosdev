@@ -866,3 +866,6 @@ class Preprocessing:
             newimage[newbad] = np.nan
 
         return newimage
+
+if __name__ == "__main__":
+    pass

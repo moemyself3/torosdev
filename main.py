@@ -6,7 +6,7 @@ from scripts.difference import BigDiff
 from scripts.cutouts import generate_all_cutouts_per_field
 from config import Configuration
 
-if __name__ == "__main__":
+def main():
     # do necessary prep work such as making output directories
     Utils.create_directories(Configuration.DIRECTORIES)
 
@@ -44,3 +44,6 @@ if __name__ == "__main__":
     else:
         Utils.log("Skipping cutout generatation.", "info")
     Utils.log("All done! See ya later, alligator.", "info")
+
+if __name__ == "__main__":
+    main()

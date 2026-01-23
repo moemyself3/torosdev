@@ -131,8 +131,8 @@ class Photometry:
 
         num_rrows = len(star_list)
 
-        if num_rrows > STAR_LIST_MAX:
-            num_rrows = STAR_LIST_MAX
+        #if num_rrows > STAR_LIST_MAX:
+        #    num_rrows = STAR_LIST_MAX
 
         # make the holders for the light curves
         jd = np.zeros(nfiles)
@@ -232,3 +232,6 @@ class Photometry:
                                                          sep=" ", index=False, na_rep='9.999999')
 
         return
+
+if __name__ == "__main__":
+    pass
