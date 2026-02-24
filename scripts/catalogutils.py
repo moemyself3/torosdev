@@ -56,12 +56,46 @@ def make_source_extractor_catalog_dataframe(file: str) -> pd.DataFrame:
                      names=header_keys, header=None)
     return df
 
-def make_labeled_catalog():
+def make_labeled_catalog(cleanfilename, gcvs_coords, vsx_coords):
 # Catalog labeling
 # Cross match catalog with:
 #   Variable stars as REAL
 #   XY position of injection as REAL
-    pass
+
+    # load sources from differenced frame as dataframe
+    diff_sources = load_diff_catalog(cleanfilename)
+
+    # add real bogus flag real = 1,  bogus = 0
+    #   use bogus as default
+    diff_sources['REAL'] = 0
+
+    # convert differenced sources RA DEC to skycoords
+    diff_coords = format_source_coords(diff_sources)
+
+    # crossmatch variables with differenced sources
+    idx_matches = crossmatch_variable_star_catalogs(
+            gcvs_coords,
+            vsx_coords,
+            diff_coords)
+
+    # convert injection XY positions to RA DEC SkyCoords
+    inj_coords = convert_injection_XY_to_world(cleanfilename)
+
+    # crossmatch injections with differenced sources
+    inj_matches = crossmatch_catalogs(inj_coords, diff_coords)
+
+    # join IDs for Variable Stars matches and Injection matches
+    idx_matches = np.concatenate((idx_matches, inj_matches), axis=0)
+
+    # make unique list of ids
+    idx_matches = list(set(idx_matches))
+
+    # add real flag to data
+    diff_sources.loc[idx_matches, 'REAL'] = 1
+
+    # save file for training
+    Utils.log(f"saving file: {realbogusfilename}", "info")
+    diff_sources.to_csv(realbogusfilename, index=False)
 
 def get_variable_star_table():
 # Query FIELD for variable stars
@@ -140,9 +174,6 @@ def make_source_catalog_name(cleanfilename, source_catalog_type="injection"):
 
     return filename
 
-def make_training_filename(cleanfilename):
-    return
-
 def convert_injection_XY_to_world(filename):
     header = fits.getheader(filename)
     wcs = WCS(header=header)
@@ -173,50 +204,22 @@ def crossmatch_catalogs(catalog_coords, source_coords):
     return idx[d2d < max_sep]
 
 def main():
-    # setup directories for random forest
-    # get cleanfile list
+    # setup directories for Real Bogus catalogs and get cleanfile list
     cleanfiles, clean_date_dirs = generate_directories()
-    ## Label variable stars as REAL
+
     # get table of variable stars
     variable_star_table = get_variable_star_table()
+
     # format startable to get skycoords
     gcvs_coords = format_gcvs_coords(variable_star_table)
     vsx_coords = format_vsx_coords(variable_star_table)
-    for cleanfilename in cleanfiles:
-        realbogusfilename = make_source_catalog_name(cleanfilename, "realbogus")
 
+    for cleanfilename in cleanfiles:
+        Utils.log(f"working on {cleanfilename}", "info")
+        realbogusfilename = make_source_catalog_name(cleanfilename, "realbogus")
         if os.path.isfile(realbogusfilename):
             Utils.log(f"rb_catalog already exists! Skipping...", "info")
             continue
 
         Utils.log(f'{cleanfilename=}',"info")
-
-
-        # load sources from differenced frame as dataframe
-        diff_sources = load_diff_catalog(cleanfilename)
-
-        # add real bogus flag real = 1,  bogus = 0
-        #   use bogus as default
-        diff_sources['REAL'] = 0
-
-        # convert differenced sources RA DEC to skycoords
-        diff_coords = format_source_coords(diff_sources)
-
-        # crossmatch variables with sources
-        idx_matches = crossmatch_variable_star_catalogs(
-                gcvs_coords,
-                vsx_coords,
-                diff_coords)
-
-        ## Label Injections as REAL
-        inj_coords = convert_injection_XY_to_world(cleanfilename)
-        inj_matches = crossmatch_catalogs(inj_coords, diff_coords)
-        idx_matches = np.concatenate((idx_matches, inj_matches), axis=0)
-        idx_matches = list(set(idx_matches))
-
-        # add real flag to data
-        diff_sources.loc[idx_matches, 'REAL'] = 1
-
-        # save file for training
-        Utils.log(f"saving file: {realbogusfilename}", "info")
-        diff_sources.to_csv(realbogusfilename, index=False)
+        make_labeled_catalog(cleanfilename, gcvs_coords, vsx_coords)
