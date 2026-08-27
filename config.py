@@ -86,7 +86,7 @@ class Configuration:
     CUTOUT_WIDTH = 276 # in pixels
 
     # injection configs
-    UPPER_MAG_LIMIT = 12 # Catalog G mag (Gaia)
+    UPPER_MAG_LIMIT = 13 # Catalog G mag (Gaia)
     MAG_OFFSET = 25 # Instrumental mag + MAG_OFFSET = Catalog mag
     # Project directory
     PROJECT_DIRECTORY = "/Users/mcast/Research/toros/ryan/torosdev/"

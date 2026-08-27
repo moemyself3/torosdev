@@ -2,8 +2,11 @@ from config import Configuration
 from libraries.utils import Utils
 
 from astroquery.vizier import Vizier
+from astropy.stats import SigmaClip
 from astropy.wcs import WCS
 from astropy.io import fits
+from astropy.time import Time
+from photutils.aperture import CircularAperture, CircularAnnulus, aperture_photometry, ApertureStats
 
 import astropy.coordinates as coord
 import astropy.units as u
@@ -84,6 +87,9 @@ def make_labeled_catalog(cleanfilename, gcvs_coords, vsx_coords):
     # crossmatch injections with differenced sources
     inj_matches = crossmatch_catalogs(inj_coords, diff_coords)
 
+    # injection magnitudes
+    # diff_sources.loc[inj_matches, "INJ_MAG"] = inj_mags
+
     # join IDs for Variable Stars matches and Injection matches
     idx_matches = np.concatenate((idx_matches, inj_matches), axis=0)
 
@@ -92,6 +98,10 @@ def make_labeled_catalog(cleanfilename, gcvs_coords, vsx_coords):
 
     # add real flag to data
     diff_sources.loc[idx_matches, 'REAL'] = 1
+
+    realbogusfilename = make_source_catalog_name(
+            cleanfilename, 
+            source_catalog_type="realbogus")
 
     # save file for training
     Utils.log(f"saving file: {realbogusfilename}", "info")
@@ -180,7 +190,8 @@ def convert_injection_XY_to_world(filename):
     xy_catalog = load_injection_catalog(filename)
     x = xy_catalog['X'].to_numpy()
     y = xy_catalog['Y'].to_numpy()
-    return wcs.pixel_to_world(x, y)
+    coords = wcs.all_pix2world(x, y, 0)
+    return coord.SkyCoord(coords[0], coords[1], unit=(u.deg, u.deg))
 
 def crossmatch_variable_star_catalogs(gcvs_coords, vsx_coords, source_coords):
     gcvs_matches = crossmatch_catalogs(gcvs_coords, source_coords)
@@ -202,6 +213,82 @@ def crossmatch_catalogs(catalog_coords, source_coords):
     max_sep = 5.0 * u.arcsec
 
     return idx[d2d < max_sep]
+
+def forced_photometry_inspection(file=None):
+    if file is not None:
+        # Load position catalog
+        path = Configuration.INJECTED_CLEAN_DIRECTORY
+        field = Configuration.FIELD
+        step = "report"
+        file_ext = ".fits"
+        # generate list of frames
+        files, date_dirs = Utils.get_all_files_per_field(
+               path, field, step, file_ext)
+
+    else:
+        files = [file]
+
+    # get aperture photometry
+    for file in files:
+        Utils.log(f"Working on {file=}", "info")
+        data, header = fits.getdata(file, header=True)
+        injectioncat = load_injection_catalog(file)
+        positions = np.transpose((injectioncat['X'], injectioncat['Y']))
+
+        # injection apertures
+        apertures = CircularAperture(
+                positions, r=Configuration.APER_SIZE)
+        aperture_area = apertures.area
+
+        # sky annuli
+        annulus_aperture = CircularAnnulus( positions,
+                                            r_in=Configuration.ANNULI_INNER,
+                                            r_out=Configuration.ANNULI_OUTER)
+
+        # background stats
+        sigma_clip = None#SigmaClip(sigma=3.0)
+        aperstats = ApertureStats(data, annulus_aperture, sigma_clip=sigma_clip)
+        bkg_mean = aperstats.mean
+        total_bkg = np.abs(header['sky']) * aperture_area
+
+        # get photometry table
+        phot_table = aperture_photometry(data, apertures, method='exact')
+        phot_table['sky'] = total_bkg
+        phot_table['npix'] = aperture_area
+
+        # get star flux Note: images had sky subtracted and 'sky' median added
+        star_flux = np.array(phot_table['aperture_sum'] - total_bkg)# * Configuration.GAIN
+
+        # calculate photometric error
+        star_error = star_flux
+        bkg_error = total_bkg #* Configuration.GAIN
+
+        # combine sky and signal error in quadrature
+        star_flux_err = np.sqrt(star_error + bkg_error)
+
+        # convert to magnitude
+        mag = 25. - 2.5 * np.log10(star_flux)
+        mag_er = (np.log(10.) / 2.5) * (star_flux_err / star_flux)
+
+        # correct magnitude for exposure time
+        #mag = mag + 2.5 * np.log10(Configuration.EXP_TIME)
+
+        # replace nans with -9.999999
+        mag = np.where(np.isnan(mag), -9.999999, mag)
+
+        time = Time(header['DATE'], format='isot', scale='utc')
+        jd = time.jd
+        flux_file = injectioncat.copy().reset_index(drop=True)
+        flux_file['flux'] = star_flux
+        flux_file['flux_er'] = star_error
+        flux_file['torosG'] = mag
+        flux_file['torosG_er'] = mag_er
+        flux_file['bkg'] = bkg_error
+        flux_file['jd'] = jd
+        flux_file['exp_time'] = Configuration.EXP_TIME
+        flux_file.to_csv(file+"_flux.csv", header=True, index=False)
+
+        return phot_table, mag
 
 def main():
     # setup directories for Real Bogus catalogs and get cleanfile list

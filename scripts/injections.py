@@ -9,6 +9,7 @@ from config import Configuration
 
 from astropy.io import fits
 from astropy.table import QTable
+from astropy.wcs import WCS
 
 import numpy as np
 import pandas as pd
@@ -16,6 +17,7 @@ import pandas as pd
 import os
 import subprocess
 import time
+import secrets
 
 def create_injection_images() -> None:
     """ This function creates the ePSF model for images and injects sources
@@ -144,14 +146,28 @@ def create_injection_images() -> None:
             injector.load_epsf(epsf_resized)
 
         # get magnitude range from loneley peaks and add +/- 0.5
-        upper_magnitude = lonely_peaks_table['mag'].min() - 0.5
-        lower_magnitude = lonely_peaks_table['mag'].max() + 0.5
-        upper_mag_limit = Configuration.UPPER_MAG_LIMIT - Configuration.MAG_OFFSET
+        # first convert mag to toros g
+        upper_flux = lonely_peaks_table['flux'].max()
+        lower_flux = lonely_peaks_table['flux'].min()
+
+        upper_magnitude = Configuration.MAG_OFFSET - 2.5*np.log10(
+            upper_flux)# * Configuration.GAIN/ Configuration.EXPOSURE_TIME)
+
+        lower_magnitude = Configuration.MAG_OFFSET - 2.5*np.log10(
+            lower_flux)# * Configuration.GAIN/ Configuration.EXPOSURE_TIME)
+
+        # extend limits
+        upper_magnitude = upper_magnitude - 0.5
+        lower_magnitude = lower_magnitude + 0.5
+
+        upper_mag_limit = Configuration.UPPER_MAG_LIMIT
         # REMEMBER the lower the magnitude the BRIGHTER the object
         # check if the upper_magnitude of lonely_peaks_table is BRIGHTER
         #   than the upper_mag_limit
         if upper_magnitude < upper_mag_limit:
             upper_magnitude = upper_mag_limit
+
+        Utils.log(f"{upper_magnitude=} {lower_magnitude=} {upper_mag_limit=}","debug")
 
         # make path and name for injection catalog
         injection_catalog = file.replace(
@@ -160,17 +176,26 @@ def create_injection_images() -> None:
         injection_catalog = injection_catalog.replace(".fits", "_injection.csv")
 
         # Check for injection catalog
+        seed = None
         if not os.path.isfile(injection_catalog):
             # Generate N random sources to match with sources found in 
             Utils.log(
                     f"Making {num_sources} sources using upper mag {upper_magnitude} and lower mag {lower_magnitude}",
                     "info")
-            positions = generate_random_source_positions(num_sources)
+            seed = secrets.randbits(128)
+            positions = generate_random_source_positions(num_sources, seed)
             position_table = pd.DataFrame(positions, columns=['X','Y'])
+            wcs = WCS(file)
+            coords = wcs.all_pix2world(position_table['X'],
+                                       position_table['Y'],
+                                       0)
+            position_table['RA'] = coords[0]
+            position_table['Dec'] = coords[1]
             position_table['MAG'] = generate_random_source_magnitudes(
                                         upper_magnitude,
                                         lower_magnitude,
-                                        num_sources)
+                                        num_sources,
+                                        seed)
 
             # save injection source table
             position_table.to_csv(injection_catalog, index=False, sep="\t")
@@ -186,6 +211,9 @@ def create_injection_images() -> None:
         # Add injection information to header
         injector.image.header.append(
                 ('INJECTED', num_sources, 'number of sources injected')
+                )
+        injector.image.header.append(
+                ('INJSEED', seed, 'numpy default_rng seed')
                 )
         Utils.log(f"Writing injected file to {injected_filepath}", "info")
         # Save injected fits file to injected CLEAN directory
@@ -290,19 +318,29 @@ def make_source_extractor_catalog_dataframe(file: str) -> pd.DataFrame:
     return df
 
 def generate_random_source_positions(
-        num_sources: int
-) -> list[list[float, float]]:
-    rng = np.random.default_rng() # Random Number Generator
+        num_sources: int,
+        seed: int | None = None
+        ) -> list[list[float, float]]:
+    rng = np.random.default_rng(seed=seed) # Random Number Generator
     # uniform distribution of num_sources positions
-    positions = rng.uniform(31, Configuration.AXS_X-31, (num_sources, 2))
+    #  Do not include positions on the edges.
+    padding = Configuration.APER_SIZE*1.25
+
+    if padding % 2 == 0:
+        # if even
+        padding += 1 # make odd
+
+    positions = rng.uniform(padding, Configuration.AXS_X-padding, 
+                            (num_sources, 2))
     return positions
 
 def generate_random_source_magnitudes(
         upper_magnitude: float,
         lower_magnitude: float,
-        num_sources: int
+        num_sources: int,
+        seed: int | None = None
 ) -> list[float]:
-    rng = np.random.default_rng() # Random Number Generator
+    rng = np.random.default_rng(seed=seed) # Random Number Generator
     # uniform distribution of magnitudes
     magnitudes = rng.uniform(upper_magnitude, lower_magnitude, num_sources)
     return magnitudes
@@ -321,12 +359,18 @@ def difference_injected_images() -> None:
     Utils.log("Differencing injeced images...", "info")
     BigDiff.difference_images()
 
+def make_injected_difference_image_catalog() -> None:
+    # This is a convience function to make the source extraction cat files
+    # from the injected differenced images for training.
+    update_config_path_to_injected_dir()
+    make_difference_image_catalog()
+
 def main() -> None:
     make_difference_image_catalog()
     create_injection_images()
     update_config_path_to_injected_dir()
     difference_injected_images()
-
+    make_injected_difference_image_catalog()
 
 if __name__ == "__main__":
     main()
