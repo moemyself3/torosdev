@@ -15,6 +15,9 @@ from sklearn.metrics import (
 
 from imblearn.under_sampling import RandomUnderSampler
 
+from config import Configuration
+from libraries.utils import Utils
+
 from pathlib import Path
 from datetime import datetime
 
@@ -50,7 +53,7 @@ def format_dataset(rb_catalog):
     y = rb_catalog['REAL']
     return X, y
 
-def conform(rb_catalog):
+def conform(rb_catalog, train=False):
     # Using this column order to conform to O2 paper
     columns = ['FLUX_APER', 'FLUXERR_APER',
                 'MAG_APER', 'MAGERR_APER',
@@ -69,10 +72,13 @@ def conform(rb_catalog):
                 'FLUX_GROWTHSTEP',
                 'MAG_GROWTH', 'MAG_GROWTHSTEP',
                 'FLUX_RADIUS',
-                'REAL',
                ]
     # number of columns used in O2 paper plus labels
-    total_columns = 44 + 1
+    total_columns = 44
+
+    if train:
+        columns.append('REAL')
+        total_columns += 1
 
     if len(columns) != total_columns:
         print("Columns did not conform")
@@ -89,7 +95,7 @@ def train() -> None:
 
     # Conform to O2 paper
     print("CONFORM...")
-    rb_catalog = conform(rb_catalog)
+    rb_catalog = conform(rb_catalog, train=True)
 
     # Format dataset
     print("FORMATTING DATASET...")
@@ -151,9 +157,13 @@ def train() -> None:
     # ROC - Receiver Operating Curve
     rf.fit(X_train, y_train)
     ax = plt.gca()
+    plt.grid(True)
     rf_disp = RocCurveDisplay.from_estimator(
         rf, X_test, y_test, ax=ax, curve_kwargs=dict(alpha=0.8)
     )
+    ax.set_xlim(0.0, 0.5)
+    ax.set_ylim(0.5, 1.0)
+    ax.set_box_aspect(1)
     plt.title("Receiver Operating Curve")
     plt.savefig("ROC.png", dpi=300, bbox_inches="tight")
     plt.show()
@@ -207,12 +217,28 @@ def predict(rf_model, filepath):
 
     # predict
     predictions = rf_model.predict(X)
-    probabilities = rf_model.predict_proba(X)
 
+    # add precition to data
+    data['CLASS_REAL'] = predictions
+
+    # update filepath to save classification
+    filepath = filepath.replace('/rb_catalogs/', '/class_rf/')
+    filepath = filepath.replace('_realbogus.csv','_classification.csv')
     # save classification as new file
-    return predictions, probabilities
+    data.to_csv(filepath)
+    print(f"{filepath=}")
+    return predictions
 
-def main() -> None:
+def get_rb_catalog_list():
+    files, date_dirs = Utils.get_all_files_per_field(
+            Configuration.REALBOGUS_CATALOG_DIRECTORY,
+            Configuration.FIELD,
+            'realbogus',
+            '.csv')
+
+    return files, date_dirs
+
+def load_model():
     # look to see if model exists
     directory = Path()
     basename = "toros_rf_classifier"
@@ -229,13 +255,47 @@ def main() -> None:
             if timestamp > latest_timestamp:
                 latest_timestamp = timestamp
                 newest_model = model
-
+        print(f"Loading {newest_model}...")
         rf_model = joblib.load(newest_model)
     else:
         print("NO Models Found... training new model!")
         rf_model = train()
 
     return rf_model
+
+def generate_rf_classification_directories():
+    # get the file list for all dates the FIELD was observed
+    Utils.log("Generating directories for RANDOM FOREST classifications", "info")
+    files, date_dirs = get_rb_catalog_list()
+
+    class_rf_dir = Configuration.CLASSIFICATION_RF_DIRECTORY
+
+    # make the output directories
+    output_dirs = []
+    for date in date_dirs:
+        output_dirs.append(class_rf_dir)
+        output_dirs.append(class_rf_dir + date)
+        output_dirs.append(class_rf_dir + date + "/" + Configuration.FIELD)
+
+    Utils.create_directories(output_dirs)
+
+    return files, date_dirs
+
+
+def main():
+    # load rf_model
+    rf_model = load_model()
+
+    # get rb catalogs
+    files, date_dirs = get_rb_catalog_list()
+
+    # generate classification dirs to store output
+    generate_rf_classification_directories()
+
+    for file in files:
+        predictions = predict(rf_model, file)
+
+    return locals()
 
 if __name__ == "__main__":
     main()

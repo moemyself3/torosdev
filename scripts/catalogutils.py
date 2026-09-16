@@ -19,11 +19,20 @@ CATALOGS = [
         'B/vsx/vsx',        # INTERNATIONAL VARIABLE STAR INDEX
         ]
 
-def generate_directories():
+TRAINING = False
+
+def generate_directories(training=TRAINING):
+    if training:
+        clean_directory = Configuration.INJECTED_CLEAN_DIRECTORY
+        rb_catalog_directory = Configuration.INJECTED_REALBOGUS_CATALOG_DIRECTORY
+    else:
+        clean_directory = Configuration.CLEAN_DIRECTORY
+        rb_catalog_directory = Configuration.REALBOGUS_CATALOG_DIRECTORY
+
     # get the file list for all dates the FIELD was observed
-    Utils.log("Generating directories for Real Bogus training set", "info")
+    Utils.log("Generating directories for Real Bogus", "info")
     files, date_dirs = Utils.get_all_files_per_field(
-            Configuration.INJECTED_CLEAN_DIRECTORY,
+            clean_directory,
             Configuration.FIELD,
             'realbogus',
             Configuration.FILE_EXTENSION)
@@ -31,11 +40,9 @@ def generate_directories():
     # make the output directories
     output_dirs = []
     for date in date_dirs:
-        output_dirs.append(Configuration.REALBOGUS_CATALOG_DIRECTORY)
-        output_dirs.append(Configuration.REALBOGUS_CATALOG_DIRECTORY + date)
-        output_dirs.append(
-                Configuration.REALBOGUS_CATALOG_DIRECTORY   + date \
-                        + "/" + Configuration.FIELD)
+        output_dirs.append(rb_catalog_directory)
+        output_dirs.append(rb_catalog_directory + date)
+        output_dirs.append(rb_catalog_directory + date + "/" + Configuration.FIELD)
 
     Utils.create_directories(output_dirs)
 
@@ -59,7 +66,7 @@ def make_source_extractor_catalog_dataframe(file: str) -> pd.DataFrame:
                      names=header_keys, header=None)
     return df
 
-def make_labeled_catalog(cleanfilename, gcvs_coords, vsx_coords):
+def make_labeled_catalog(cleanfilename, gcvs_coords, vsx_coords, training=TRAINING):
 # Catalog labeling
 # Cross match catalog with:
 #   Variable stars as REAL
@@ -81,19 +88,20 @@ def make_labeled_catalog(cleanfilename, gcvs_coords, vsx_coords):
             vsx_coords,
             diff_coords)
 
-    # convert injection XY positions to RA DEC SkyCoords
-    inj_coords = convert_injection_XY_to_world(cleanfilename)
+    if training:
+        # convert injection XY positions to RA DEC SkyCoords
+        inj_coords = convert_injection_XY_to_world(cleanfilename)
 
-    # crossmatch injections with differenced sources
-    inj_matches = crossmatch_catalogs(inj_coords, diff_coords)
+        # crossmatch injections with differenced sources
+        inj_matches = crossmatch_catalogs(inj_coords, diff_coords)
 
-    # injection magnitudes
-    # diff_sources.loc[inj_matches, "INJ_MAG"] = inj_mags
+        # injection magnitudes
+        # diff_sources.loc[inj_matches, "INJ_MAG"] = inj_mags
 
-    # join IDs for Variable Stars matches and Injection matches
-    idx_matches = np.concatenate((idx_matches, inj_matches), axis=0)
+        # join IDs for Variable Stars matches and Injection matches
+        idx_matches = np.concatenate((idx_matches, inj_matches), axis=0)
 
-    # make unique list of ids
+    # make list of nonrepeating ids
     idx_matches = list(set(idx_matches))
 
     # add real flag to data
@@ -151,26 +159,39 @@ def load_diff_catalog(filename):
             source_catalog_type="difference")
     return  make_source_extractor_catalog_dataframe(diff_catalog)
 
-def make_source_catalog_name(cleanfilename, source_catalog_type="injection"):
-    cleanfile_ext = "i.fits"
+def make_source_catalog_name(cleanfilename, 
+                             source_catalog_type="injection",
+                             training=False):
+    if training:
+        inj = "i"
+    else:
+        inj = ""
+
+    cleanfile_ext = f"{inj}.fits"
     cleanfile_dir = "/clean/"
+
     source_catalogs = {
+            "difference":
+                {
+                    "ext":  f"{inj}ad.cat",
+                    "dir":  f"/diff_catalogs/",
+                    },
+            "realbogus":
+                {
+                    "ext": f"{inj}ad_realbogus.csv",
+                    "dir": "/rb_catalogs/",
+                    },
+                }
+
+    if training:
+        source_catalogs.update({
             "injection":
                 {
                     "ext":  "_injection.csv",
                     "dir":  "/catalogs/",
                     },
-            "difference":
-                {
-                    "ext":  "iad.cat",
-                    "dir":  "/diff_catalogs/",
-                    },
-            "realbogus":
-                {
-                    "ext": "iad_realbogus.csv",
-                    "dir": "/rb_catalogs/",
-                    },
                 }
+                               )
 
     # change file extension
     filename = cleanfilename.replace(
