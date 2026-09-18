@@ -129,7 +129,7 @@ def generate_cutouts_from_filepath(filepath, filetype=""):
     else:
         Utils.log(f"Filetype {filetype.lower()} is not implemented. Writing files to {output_dir}.", "info")
 
-    # load master frame
+    # load frame to cut
     hdu = fits.open(filepath)[0]
     wcs = WCS(hdu.header)
 
@@ -197,19 +197,34 @@ def generate_all_cutouts_per_field(filetype="clean"):
     else:
         Utils.log(f"Filetype {filetype} is not known.", "info")
 
-    files, dates = Utils.get_all_files_per_field(
-                    directory,
-                    fieldname,
-                    'cutout',
-                    '.fits')
+    if filetype.lower() != "master":
+        files, dates = Utils.get_all_files_per_field(
+                        directory,
+                        fieldname,
+                        'cutout',
+                        '.fits')
+
+    else:
+        files = [ Configuration.MASTER_DIRECTORY + fieldname + "_master" + Configuration.FILE_EXTENSION ]
+
 
     numfiles = len(files)
 
     for idx, file in enumerate(tqdm(files)):
-        generate_cutouts_from_filepath(file, filetype="clean")
+        generate_cutouts_from_filepath(file, filetype=filetype)
         Utils.log(f"{idx} of {numfiles} files complete","info")
-    Utils.log("All done making CLEAN cutouts!", "info")
+    Utils.log(f"All done making {filetype.upper()} cutouts!", "info")
 
+
+def main():
+    STEPS = [ 
+             "clean",
+             "diff",
+             "master",
+             ]
+
+    for step in STEPS:
+        generate_all_cutouts_per_field(step)
 
 if __name__ == "__main__":
     pass
